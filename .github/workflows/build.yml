@@ -35,8 +35,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name:       - name: Install Android SDK 37
-        run: |
+      - name: Install Android SDK 37        run: |
           sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
           ln -sfn "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
 
