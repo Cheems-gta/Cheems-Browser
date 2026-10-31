@@ -2,22 +2,29 @@ name: Build Cheems Browser APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Extract source
+        run: unzip -q CheemsGeckoBrowser_V0.1_Source.zip -d source
+
+      - name: Fix build compatibility
         run: |
-          ZIP=$(find . -maxdepth 1 -name '*.zip' -print -quit)
-          test -n "$ZIP"
-          unzip -q "$ZIP" -d source
+          ROOT=source/CheemsGeckoBrowser
+          sed -i 's/version "8.10.0"/version "9.1.1"/' "$ROOT/build.gradle.kts"
+          sed -i '/id("org.jetbrains.kotlin.android")/d' "$ROOT/build.gradle.kts"
+          sed -i '/id("org.jetbrains.kotlin.android")/d' "$ROOT/app/build.gradle.kts"
+          sed -i 's/compileSdk = 35/compileSdk = 37/' "$ROOT/app/build.gradle.kts"
+          sed -i '/kotlinOptions { jvmTarget = "17" }/d' "$ROOT/app/build.gradle.kts"
+          grep -q 'version "9.1.1"' "$ROOT/build.gradle.kts"
+          grep -q 'compileSdk = 37' "$ROOT/app/build.gradle.kts"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -28,20 +35,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK 37
+        run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '9.3.1'
 
       - name: Build APK
-        run: |
-          gradle -p source/CheemsGeckoBrowser :app:assembleDebug --no-daemon
+        run: gradle -p source/CheemsGeckoBrowser :app:assembleDebug --no-daemon
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: CheemsBrowser-APK
           path: source/CheemsGeckoBrowser/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
