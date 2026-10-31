@@ -30,6 +30,31 @@ jobs:
           grep -q 'version "2.4.20"' "$ROOT/build.gradle.kts"
           grep -q 'compileSdk = 37' "$ROOT/app/build.gradle.kts"
 
+      - name: Fix ColorStateList Kotlin type mismatch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("source/CheemsGeckoBrowser/app/src/main/java/io/cheems/browser/MainActivity.kt")
+          lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+          line_number = 177
+          original = lines[line_number - 1]
+          print(f"Inspecting MainActivity.kt:{line_number}: {original.rstrip()}")
+          match = re.fullmatch(r"(\s*[\w.]*TintList\s*=\s*)(.*?)(\r?\n)?", original)
+          if match is None:
+              raise RuntimeError("Unexpected Kotlin statement at line 177; refusing unsafe rewrite")
+          expression = match.group(2).strip()
+          if not expression or "ColorStateList.valueOf" in expression:
+              raise RuntimeError("Unexpected tint expression; refusing unsafe rewrite")
+          lines[line_number - 1] = (
+              match.group(1) + "android.content.res.ColorStateList.valueOf("
+              + expression + ")" + (match.group(3) or "")
+          )
+          path.write_text("".join(lines), encoding="utf-8")
+          PY
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
