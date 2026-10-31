@@ -15,8 +15,9 @@ jobs:
       - name: Extract source
         run: unzip -q CheemsGeckoBrowser_V0.1_Source.zip -d source
 
-      - name: Fix build compatibility
+      - name: Fix Android build compatibility
         run: |
+          set -e
           ROOT=source/CheemsGeckoBrowser
           sed -i 's/version "8.10.0"/version "9.1.1"/' "$ROOT/build.gradle.kts"
           sed -i '/id("org.jetbrains.kotlin.android")/d' "$ROOT/build.gradle.kts"
@@ -26,23 +27,21 @@ jobs:
           grep -q 'version "9.1.1"' "$ROOT/build.gradle.kts"
           grep -q 'compileSdk = 37' "$ROOT/app/build.gradle.kts"
 
-      - name: Setup Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-            - name: Install Android SDK 37
+      - name: Install Android SDK 37
         run: |
-          sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
-          ln -sfn "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"        run: |
           sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
           ln -sfn "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
 
-      - name: Setup Gradle
+      - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
@@ -51,7 +50,6 @@ jobs:
         run: gradle -p source/CheemsGeckoBrowser :app:assembleDebug --no-daemon
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: CheemsBrowser-APK
