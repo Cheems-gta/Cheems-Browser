@@ -6,6 +6,7 @@ Production HTTPS/rate limiting must be handled by a trusted reverse proxy.
 import html
 import json
 import os
+import re
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -90,9 +91,10 @@ def render(query="", page=1, category="general"):
         "__TABS__": tabs,
         "__PAGE__": str(page),
     }
-    result = PAGE
-    for marker, value in mapping.items():
-        result = result.replace(marker, value)
+    # One-pass template substitution prevents user-supplied placeholder tokens
+    # from being interpreted as new template directives.
+    result = re.sub(r"__(?:QUERY|RESULTS|STATUS|PAGINATION|TABS|PAGE)__",
+                    lambda match: mapping[match.group(0)], PAGE)
     return result.encode("utf-8")
 
 
