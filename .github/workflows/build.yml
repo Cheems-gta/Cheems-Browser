@@ -156,12 +156,32 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Package ARM64 APK only (smaller Android phone download)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("source/CheemsGeckoBrowser/app/build.gradle.kts")
+          src=p.read_text(encoding="utf-8")
+          if 'abiFilters' in src:
+              raise RuntimeError("ABI settings already present; review build manually")
+          src += """
+          android {
+              defaultConfig {
+                  ndk {
+                      abiFilters.add("arm64-v8a")
+                  }
+              }
+          }
+          """
+          p.write_text(src, encoding="utf-8")
+          PY
+
       - name: Build APK
         run: gradle -p source/CheemsGeckoBrowser :app:assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsBrowser-V0.2.1-APK
+          name: CheemsBrowser-V0.2.1-ARM64-APK
           path: source/CheemsGeckoBrowser/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
