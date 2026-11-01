@@ -131,6 +131,9 @@ jobs:
           app_gradle.write_text(gradle, encoding="utf-8")
           PY
 
+      - name: Fix blank pages and renderer recovery (V0.2.1)
+        run: python3 tools/fix_white_screen.py
+
       - name: Test Cheems Search frontend
         run: python3 -m unittest discover -s search/web -p 'test_*.py' -v
 
@@ -159,6 +162,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsBrowser-V0.2-APK
+          name: CheemsBrowser-V0.2.1-APK
           path: source/CheemsGeckoBrowser/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
