@@ -134,6 +134,9 @@ jobs:
       - name: Fix blank pages and renderer recovery (V0.2.1)
         run: python3 tools/fix_white_screen.py
 
+      - name: Prevent about blank tab and page (V0.2.2)
+        run: python3 tools/fix_about_blank.py
+
       - name: Test Cheems Search frontend
         run: python3 -m unittest discover -s search/web -p 'test_*.py' -v
 
@@ -182,6 +185,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsBrowser-V0.2.1-ARM64-APK
+          name: CheemsBrowser-V0.2.2-ARM64-APK
           path: source/CheemsGeckoBrowser/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
