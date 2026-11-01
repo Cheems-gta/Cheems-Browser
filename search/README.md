@@ -28,10 +28,10 @@
 
 ## 在 Cheems Browser V0.2 上使用
 
-1. 在浏览器首页点击 **「🦊 Cheems Search · 修改搜索源」**。
-2. 填入部署好的 `https://search.example.com` （不带 `/search`）。
-3. 保存后，在地址栏输入关键词，GeckoView 就会访问这个地址的 `/search?q=...`，并看到 Cheems Search 的透明玻璃搜索结果。
-4. 在尚未部署服务器前，App 默认使用公开 SearXNG 实例 `https://search.inetol.net`，可联网搜索真实网页；**公开实例可能不可用、限流或在某些网络无法访问**。设置中可恢复默认或切换实例。
+1. 在 Cheems Browser 地址栏输入关键词，进入 **Cheems Search 原生搜索结果**。
+2. 点结果页右上角的 **⚙**，输入你部署好的 `https://search.example.com` （不带 `/search`），然后保存。
+3. App 首先请求 `/search?q=...&format=json`，显示自己的原生搜索卡片；若某实例禁止 JSON，会自动用 GeckoView 打开该实例的网页搜索结果。
+4. 在尚未部署自己的服务前，App 使用当前版本内置的公共 SearXNG 实例作为默认搜索源；**公开实例可能不可用、限流或在某些网络无法访问**。设置中可恢复默认或切换实例。
 
 注意：升级 Debug APK 时若提示签名不一致，可能是不同 GitHub Actions Runner 使用不同调试签名；这时只能先卸载旧调试版再安装（会清除旧版 App 数据）。正式发布应使用自己妥善保管的固定签名密钥。
 
