@@ -1,0 +1,13 @@
+# SearXNG settings for a private Cheems Search instance.
+use_default_settings: true
+general:
+  instance_name: "Cheems Search"
+  debug: false
+search:
+  safe_search: 2
+  formats:
+    - html
+    - json
+server:
+  limiter: false # Private instance only. Enable limiter plus Valkey before public deployment.
+  image_proxy: true
