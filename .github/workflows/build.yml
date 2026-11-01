@@ -3,6 +3,8 @@ name: Build Cheems Browser APK
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -128,6 +130,9 @@ jobs:
           gradle = gradle.replace('versionName = "0.1.0"', 'versionName = "0.2.0"')
           app_gradle.write_text(gradle, encoding="utf-8")
           PY
+
+      - name: Test Cheems Search frontend
+        run: python3 -m unittest discover -s search/web -p 'test_*.py' -v
 
       - name: Java 17
         uses: actions/setup-java@v4

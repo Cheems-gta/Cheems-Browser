@@ -1,0 +1,21 @@
+# SearXNG: copyright the SearXNG contributors, AGPL-3.0.
+# This file configures our own independently hosted instance.
+use_default_settings: true
+general:
+  debug: false
+  instance_name: "Cheems Search"
+  enable_metrics: false
+search:
+  safe_search: 2
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+ui:
+  default_theme: simple
+  theme_args:
+    simple_style: dark
+server:
+  limiter: false   # ONLY internal Docker network; front-end is bound to loopback
+  image_proxy: true
+  public_instance: false

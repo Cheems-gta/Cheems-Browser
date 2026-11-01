@@ -1,0 +1,23 @@
+# Cheems Search — self-hosted open-source search (SearXNG + Cheems UI).
+# For safety the demo listens ONLY on 127.0.0.1. Add your own HTTPS reverse proxy
+# and request limits before internet exposure.
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Create a strong SEARXNG_SECRET in your .env file}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    expose:
+      - "8080"
+
+  cheems-search:
+    build: ./web
+    restart: unless-stopped
+    depends_on:
+      - searxng
+    environment:
+      SEARXNG_API: http://searxng:8080/search
+    ports:
+      - "127.0.0.1:8088:8080"
