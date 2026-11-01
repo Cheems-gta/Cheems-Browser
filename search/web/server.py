@@ -25,7 +25,7 @@ def get_results(query, page, category):
     params = {
         "q": query,
         "format": "json",
-        "safesearch": "1",
+        "safesearch": "2",
         "language": "auto",
         "pageno": str(page),
         "categories": category,
