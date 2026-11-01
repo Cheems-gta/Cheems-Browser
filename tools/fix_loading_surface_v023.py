@@ -43,11 +43,15 @@ change(
 
 change(
 '''        val tab = currentTab()
+        cancelPageTimer()
+        clearFailure()
         tab.keepHome = true
         tab.atHome = true
         address.setText("")
 ''',
 '''        val tab = currentTab()
+        cancelPageTimer()
+        clearFailure()
         tab.keepHome = true
         tab.atHome = true
         tab.failed = false
