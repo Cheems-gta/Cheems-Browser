@@ -131,9 +131,6 @@ jobs:
           app_gradle.write_text(gradle, encoding="utf-8")
           PY
 
-      - name: Integrate GeckoView browser with SearXNG search
-        run: python3 search/scripts/patch_browser.py
-
       - name: Test Cheems Search frontend
         run: python3 -m unittest discover -s search/web -p 'test_*.py' -v
 
