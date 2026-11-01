@@ -5,7 +5,7 @@
 - **Cheems Browser APK**：Mozilla GeckoView（Firefox 渲染内核），并可在主页切换自己的搜索源。
 - **Cheems Search 前端**：自主编写的搜索页面，显示真实网页标题、摘要、来源，支持网页 / 图片 / 视频 / 新闻搜索与翻页。
 - **搜索后端**：[SearXNG](https://github.com/searxng/searxng)，AGPL-3.0 开源元搜索服务，汇总多个真正的网页搜索来源。
-- **安全与隐私**：前端不记录搜索词，默认启用 SearXNG safe_search=1；搜索请求仍会交给你配置的实例及其启用的上游搜索服务。
+- **安全与隐私**：前端不记录搜索词，默认启用 SearXNG safe_search=2；搜索请求仍会交给你配置的实例及其启用的上游搜索服务。
 
 ## 已经能搜索什么？
 部署后发送真实关键词给 SearXNG，再由 SearXNG 聚合已收录的公开网页结果。不是只在 50 个种子网站里搜索。
