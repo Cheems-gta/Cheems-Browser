@@ -6,7 +6,7 @@ general:
   instance_name: "Cheems Search"
   enable_metrics: false
 search:
-  safe_search: 1
+  safe_search: 2
   default_lang: "auto"
   formats:
     - html
