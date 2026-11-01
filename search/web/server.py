@@ -114,12 +114,24 @@ class Handler(BaseHTTPRequestHandler):
                 page = max(1, min(int(raw.get("pageno", ["1"])[0]), 20))
             except ValueError:
                 page = 1
-            category = raw.get("category", ["general"])[0]
+            category = raw.get("categories", raw.get("category", ["general"]))[0]
             if category not in CATEGORIES:
                 category = "general"
-            body = render(query, page, category)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            # Cheems Android native results use SearXNG-compatible JSON.
+            # HTML requests use our own branded glass-results UI.
+            if raw.get("format", ["html"])[0] == "json" and query:
+                try:
+                    data = get_results(query, page, category)
+                    body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+                    self.send_response(200)
+                except (ValueError, OSError, HTTPError, URLError, json.JSONDecodeError, TimeoutError):
+                    body = b'{"results":[],"error":"upstream temporarily unavailable"}'
+                    self.send_response(502)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+            else:
+                body = render(query, page, category)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
