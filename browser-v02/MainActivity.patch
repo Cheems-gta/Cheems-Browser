@@ -1,0 +1,174 @@
+--- a/app/src/main/java/io/cheems/browser/MainActivity.kt
++++ b/app/src/main/java/io/cheems/browser/MainActivity.kt
+@@ -39,7 +39,7 @@
+     companion object {
+         // GeckoRuntime 每个进程只创建一次。
+         private var sharedRuntime: GeckoRuntime? = null
+-        private const val SEARCH_ENDPOINT = "https://www.bing.com/search?q="
++        private const val DEFAULT_SEARCH = "https://searx.tiekoetter.com"
+     }
+ 
+     private data class BrowserTab(
+@@ -56,6 +56,7 @@
+ 
+     private lateinit var engineView: GeckoView
+     private lateinit var homeView: View
++    private lateinit var searchOverlay: CheemsSearchOverlay
+     private lateinit var address: EditText
+     private lateinit var loading: ProgressBar
+     private lateinit var backButton: TextView
+@@ -187,6 +188,12 @@
+         homeView = makeHome()
+         canvas.addView(homeView, FrameLayout.LayoutParams(
+             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
++        searchOverlay = CheemsSearchOverlay(this,
++            openResult = { navigate(it) },
++            openHtmlResults = { navigate(it) }
++        ).apply { visibility = View.GONE }
++        canvas.addView(searchOverlay, FrameLayout.LayoutParams(
++            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+ 
+         val bottom = LinearLayout(this).apply {
+             orientation = LinearLayout.HORIZONTAL
+@@ -280,6 +287,17 @@
+             }
+             center.addView(homeSearch, withMargins(
+                 ViewGroup.LayoutParams.MATCH_PARENT, dp(59), 0, 8))
++
++            center.addView(label("🦊 Cheems Search  ·  开源 SearXNG", 13f,
++                Color.rgb(176, 204, 236)).apply {
++                setOnClickListener { showSearchSettings() }
++            }, withMargins(ViewGroup.LayoutParams.MATCH_PARENT, dp(45), 0, 7))
++
++            center.addView(label("更改搜索服务 / 设置自己的服务器  ⚙", 13f,
++                Color.rgb(191, 215, 255)).apply {
++                background = rounded(Color.argb(52, 255, 255, 255), 14)
++                setOnClickListener { showSearchSettings() }
++            }, withMargins(ViewGroup.LayoutParams.MATCH_PARENT, dp(43), 0, 3))
+ 
+             center.addView(label("快捷入口", 14f,
+                 Color.rgb(164, 191, 238)).apply {
+@@ -306,7 +324,7 @@
+                     })
+                 }
+             }
+-            center.addView(label("CHEEMS  ·  V0.1", 12f,
++            center.addView(label("CHEEMS  ·  V0.2  /  GECKOVIEW + SEARXNG", 12f,
+                 Color.rgb(136, 157, 200)), withMargins(
+                 ViewGroup.LayoutParams.MATCH_PARENT, dp(74), 0, 20))
+         }
+@@ -413,6 +431,7 @@
+     }
+ 
+     private fun showContent(tab: BrowserTab) {
++        searchOverlay.visibility = View.GONE
+         homeView.visibility = if (tab.atHome) View.VISIBLE else View.GONE
+         engineView.visibility = if (tab.atHome) View.GONE else View.VISIBLE
+     }
+@@ -431,6 +450,11 @@
+         val input = raw.trim()
+         if (input.isBlank()) return
+         val url = normalizeAddress(input)
++        if (url == searchUrl(input)) {
++            showSearchResults(input)
++            return
++        }
++        searchOverlay.visibility = View.GONE
+         val tab = currentTab()
+         tab.atHome = false
+         tab.url = url
+@@ -452,7 +476,61 @@
+         val looksLikeHost = !query.contains(Regex("\\s")) &&
+             !query.contains(":") &&
+             (query.contains('.') || query.equals("localhost", ignoreCase = true))
+-        return if (looksLikeHost) "https://$query" else SEARCH_ENDPOINT + Uri.encode(query)
++        return if (looksLikeHost) "https://$query" else searchUrl(query)
++    }
++
++    private fun searchBase(): String {
++        val value = getPreferences(Context.MODE_PRIVATE).getString("searxng_base", DEFAULT_SEARCH)
++            ?: DEFAULT_SEARCH
++        val cleaned = value.trim().trimEnd('/')
++        val uri = Uri.parse(cleaned)
++        return if (uri.scheme == "https" && !uri.host.isNullOrBlank()) cleaned else DEFAULT_SEARCH
++    }
++
++    private fun searchUrl(query: String): String =
++        "${searchBase()}/search?q=${Uri.encode(query)}&safesearch=1"
++
++    private fun showSearchResults(query: String) {
++        val tab = currentTab()
++        tab.atHome = false
++        homeView.visibility = View.GONE
++        engineView.visibility = View.GONE
++        searchOverlay.visibility = View.VISIBLE
++        address.setText(query)
++        address.clearFocus()
++        hideKeyboard()
++        searchOverlay.search(query, searchBase())
++        updateControls()
++    }
++
++    private fun showSearchSettings() {
++        val field = EditText(this).apply {
++            setSingleLine(true)
++            setText(searchBase())
++            hint = "https://your-searxng.example"
++            setPadding(dp(18), dp(12), dp(18), dp(12))
++            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI or
++                android.text.InputType.TYPE_CLASS_TEXT
++        }
++        AlertDialog.Builder(this)
++            .setTitle("Cheems Search · 搜索后端")
++            .setMessage("默认使用公共 SearXNG。可填写你自己部署的 HTTPS SearXNG 域名。自建服务需要启用 JSON 才能使用 Cheems 原生结果界面；否则自动使用 SearXNG 网页版。")
++            .setView(field)
++            .setPositiveButton("保存") { _, _ ->
++                val raw = field.text.toString().trim().trimEnd('/')
++                val uri = Uri.parse(raw)
++                if (uri.scheme == "https" && !uri.host.isNullOrBlank()) {
++                    getPreferences(Context.MODE_PRIVATE).edit().putString("searxng_base", raw).apply()
++                    android.widget.Toast.makeText(this, "搜索后端已保存", android.widget.Toast.LENGTH_SHORT).show()
++                } else {
++                    android.widget.Toast.makeText(this, "仅接受 HTTPS 搜索服务地址", android.widget.Toast.LENGTH_LONG).show()
++                }
++            }
++            .setNeutralButton("恢复默认") { _, _ ->
++                getPreferences(Context.MODE_PRIVATE).edit().remove("searxng_base").apply()
++            }
++            .setNegativeButton("取消", null)
++            .show()
+     }
+ 
+     private fun hideKeyboard() {
+@@ -461,6 +539,10 @@
+     }
+ 
+     private fun goBack() {
++        if (searchOverlay.visibility == View.VISIBLE) {
++            showHome()
++            return
++        }
+         val tab = currentTab()
+         if (tab.atHome && tab.url.isNotBlank()) {
+             tab.atHome = false
+@@ -478,7 +560,8 @@
+         if (tabs.isEmpty()) return
+         val tab = currentTab()
+         // 主页叠层可以通过后退返回之前的网页。
+-        val backEnabled = (tab.atHome && tab.url.isNotBlank()) ||
++        val backEnabled = searchOverlay.visibility == View.VISIBLE ||
++            (tab.atHome && tab.url.isNotBlank()) ||
+             (!tab.atHome && (tab.canBack || tab.url.isNotBlank()))
+         backButton.alpha = if (backEnabled) 1f else 0.36f
+         forwardButton.alpha = if (!tab.atHome && tab.canForward) 1f else 0.36f
+@@ -516,6 +599,10 @@
+ 
+     @Deprecated("Old back dispatcher kept for a minimal Activity without AndroidX")
+     override fun onBackPressed() {
++        if (searchOverlay.visibility == View.VISIBLE) {
++            showHome()
++            return
++        }
+         val tab = currentTab()
+         if (tab.atHome) {
+             if (tab.url.isNotBlank()) goBack() else super.onBackPressed()
