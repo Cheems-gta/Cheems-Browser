@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0c1831">
+<title>Cheems Search · 自由探索</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans SC",sans-serif;color:#edf5ff;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 5% 5%,#27457e 0%,transparent 44%),radial-gradient(ellipse at 95% 100%,#33225f 0%,transparent 46%),linear-gradient(150deg,#0e1e39,#090e22 65%,#19122c);background-attachment:fixed}
+main{width:min(100% - 30px,820px);margin:0 auto;padding:48px 0 70px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:34px}
+.icon{font-size:32px;width:56px;height:56px;display:grid;place-items:center;border-radius:20px;background:#ffffff20;border:1px solid #ffffff36}
+.brand{font-size:20px;font-weight:750;letter-spacing:.08em}
+.sub{font-size:12px;color:#aebfdb;margin-top:3px;letter-spacing:.10em}
+.hero{border:1px solid #ffffff30;border-radius:28px;padding:32px 24px;background:#ffffff11;box-shadow:0 20px 90px #0004;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+h1{font-size:clamp(31px,6vw,46px);letter-spacing:-.04em;margin:5px 0 10px}
+.intro{line-height:1.7;color:#c4d4ed;font-size:14px;margin:0 0 24px}
+form{display:flex;align-items:stretch;gap:10px}
+input{flex:1;min-width:0;padding:17px 18px;font-size:16px;border-radius:17px;border:1px solid #ffffff46;background:#ffffff19;color:white;outline:none}
+input:focus{border-color:#8ebfff;box-shadow:0 0 0 4px #83bbfb27}
+input::placeholder{color:#b2c4db}
+button{background:linear-gradient(120deg,#90c9ff,#c0adfb);border:0;color:#1b2440;font-size:16px;font-weight:750;padding:0 21px;border-radius:17px;cursor:pointer}
+button:active{transform:scale(.98)}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 12px}
+.tab{display:inline-block;text-decoration:none;font-size:13px;color:#c5d8f3;background:#ffffff12;padding:8px 14px;border-radius:99px;border:1px solid #ffffff24}
+.tab.active{background:#a4c8f734;color:white;border-color:#b9dfff7d}
+.status{margin:14px 4px 24px;font-size:12px;color:#a5c1e6}
+.result{margin:12px 0;padding:22px 22px 18px;border-radius:20px;border:1px solid #ffffff26;background:#ffffff0c;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);overflow-wrap:anywhere}
+.result-title{display:inline-block;font-size:19px;line-height:1.45;color:#b3d7ff;text-decoration:none;font-weight:650}
+.result-title:hover{text-decoration:underline}
+.result-url{font-size:12px;margin-top:6px;color:#9ce9cd}
+.result p{font-size:14px;line-height:1.75;color:#d7e2f1;margin:10px 0}
+.result-source{display:block;font-size:11px;color:#8eacd3}
+.next{display:block;border:1px solid #ffffff45;border-radius:16px;padding:15px;color:white;text-decoration:none;text-align:center;margin:24px 0;background:#ffffff12}
+footer{font-size:12px;line-height:1.7;color:#90a2bd;text-align:center;margin-top:46px}
+footer strong{color:#a5c9f7}
+@media(max-width:450px){main{padding-top:20px}.top{margin-bottom:24px}.hero{padding:24px 15px}button{padding:0 17px}.result{padding:18px 16px}.intro{font-size:13px}}
+</style>
+</head>
+<body>
+<main>
+<header class="top"><div class="icon" aria-hidden="true">🦊</div><div><div class="brand">CHEEMS SEARCH</div><div class="sub">OPEN SOURCE · NO TRACKING</div></div></header>
+<section class="hero">
+<h1>探索整个网络<span style="color:#a8ceff">.</span></h1>
+<p class="intro">开源 SearXNG 聚合搜索结果，由 Cheems 自己的界面展示。搜索网页，而不是跳转到 Bing。</p>
+<form role="search" action="/search" method="get">
+<input type="search" name="q" placeholder="搜索网页、知识、图片…" value="__QUERY__" maxlength="200" autocomplete="off" aria-label="搜索内容" required>
+<button type="submit">搜索 →</button>
+</form>
+<div class="tabs">__TABS__</div>
+</section>
+<p class="status" role="status">__STATUS__</p>
+<section aria-label="搜索结果">__RESULTS__</section>
+__PAGINATION__
+<footer><strong>Cheems Search V0.2</strong> · Search powered by open-source SearXNG (AGPL-3.0).<br>搜索请求会发送至本实例的 SearXNG 后端，由后端向其配置的搜索来源查询。</footer>
+</main>
+</body></html>
