@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark">
+  <title>Cheems Search — 搜索整个网络</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", Arial, sans-serif;
+      color: #f2f5ff; background:#08101e; --glass: rgba(226,233,255,.105); --line: rgba(231,240,255,.17);
+      --text-soft:#aebbd4; --blue:#b7d1ff; }
+    * { box-sizing:border-box; }
+    html { min-height:100%; background:#08101e; }
+    body { margin:0; min-height:100dvh; background:
+      radial-gradient(ellipse 66vw 68vw at 16% 4%, rgba(79,108,197,.26), transparent 70%),
+      radial-gradient(ellipse 67vw 63vw at 94% 17%, rgba(105,63,164,.19), transparent 65%),
+      linear-gradient(150deg,#0a1221,#091020 56%,#101525);
+      background-attachment:fixed; }
+    button, input { font:inherit; }
+    button { cursor:pointer; }
+    a { color:inherit; }
+    .shell { width:min(920px,calc(100% - 30px)); margin:auto; }
+    .top { display:flex; justify-content:space-between; align-items:center; padding:19px 0 4px; }
+    .logo { display:flex; gap:12px; align-items:center; text-decoration:none; font-size:19px; font-weight:760; letter-spacing:.02em; }
+    .mark { width:43px; height:43px; border:1px solid var(--line); border-radius:15px; display:grid; place-items:center;
+      background:var(--glass); font-size:26px; box-shadow:inset 0 1px 0 rgba(255,255,255,.17); }
+    .tag { font-size:11px; color:#aebbd4; border:1px solid var(--line); padding:7px 10px; border-radius:100px; }
+    .hero { padding:66px 0 25px; text-align:center; transition:padding .25s ease; }
+    .hero h1 { font-size:clamp(32px,6.6vw,59px); margin:0 0 10px; font-weight:760; letter-spacing:-.04em; }
+    .hero h1 span { color:#b9d1ff; }
+    .hero p { color:#bcc6dc; font-size:15px; margin:5px 0 28px; line-height:1.8; }
+    .box { border-radius:26px; border:1px solid var(--line); backdrop-filter:blur(22px);
+      -webkit-backdrop-filter:blur(22px); background:rgba(220,228,251,.10);
+      padding:7px 7px 7px 16px; display:flex; align-items:center;
+      box-shadow:0 18px 54px rgba(0,0,0,.23), inset 0 1px 0 rgba(255,255,255,.18); }
+    .icon { color:#adc0e8; font-size:23px; margin:0 11px 0 4px; }
+    #query { width:100%; border:0; outline:0; color:#fff; font-size:16px; background:transparent; height:52px; min-width:0; }
+    #query::placeholder { color:#9caac5; }
+    #searchBtn { flex-shrink:0; border:0; border-radius:19px; color:#182342; font-weight:750; height:50px;
+      padding:0 22px; background:linear-gradient(145deg,#e9f1ff,#adcbff); }
+    .tools { display:flex; align-items:center; gap:7px; margin-top:14px; justify-content:center; flex-wrap:wrap; }
+    .chip { border:1px solid var(--line); border-radius:100px; padding:9px 15px; color:#c4d3f0;
+      background:rgba(235,245,255,.06); }
+    .chip[aria-pressed="true"] { background:rgba(182,210,255,.24); color:#f7faff; border-color:rgba(215,233,255,.4); }
+    .info { color:#9caac5; font-size:12px; padding:15px 4px 10px; }
+    #results { display:grid; grid-template-columns:1fr; gap:14px; padding:5px 0 45px; }
+    .result { border:1px solid var(--line); border-radius:21px; padding:20px 23px; backdrop-filter:blur(20px);
+      -webkit-backdrop-filter:blur(20px); background:rgba(230,237,255,.072); overflow-wrap:anywhere; }
+    .url { font-size:12px; color:#a5badb; display:block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; margin-bottom:8px; }
+    .result a.title { font-size:19px; color:#d4e4ff; text-decoration:none; font-weight:680; line-height:1.45; }
+    .result a.title:hover { text-decoration:underline; }
+    .desc { font-size:14px; line-height:1.75; color:#c2cbda; margin:10px 0 0; white-space:pre-wrap; }
+    .engines { font-size:11px; color:#879dbd; margin:9px 0 0; }
+    #state { text-align:center; font-size:14px; line-height:1.8; color:#b9c6dc; padding:18px; min-height:50px; }
+    #more { display:none; margin:5px auto 60px; padding:13px 26px; border:1px solid var(--line);
+      border-radius:14px; color:#fff; background:var(--glass); }
+    footer { text-align:center; color:#8797b6; font-size:12px; padding:15px 0 36px; line-height:2; }
+    footer a { color:#bad2ff; }
+    body.has-results .hero { padding:30px 0 13px; text-align:left; }
+    body.has-results .hero h1 { font-size:25px; }
+    body.has-results .hero p { display:none; }
+    @media (max-width:600px) {
+      .hero { padding-top:70px; }
+      .tag { font-size:10px; }
+      .box { border-radius:19px; padding-left:10px; }
+      #searchBtn { height:46px; padding:0 15px; border-radius:14px; }
+      #query { height:48px; font-size:15px; }
+      .result { padding:16px; }
+      .result a.title { font-size:17px; }
+    }
+    @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none!important; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <a class="logo" href="/" aria-label="Cheems Search 首页"><span class="mark">🦊</span><span>Cheems Search</span></a>
+      <span class="tag">OPEN SOURCE SEARCH · V0.2</span>
+    </header>
+    <section class="hero" aria-label="Cheems Search 搜索">
+      <h1>探索<span>整个网络。</span></h1>
+      <p>属于我们的搜索体验。开源 SearXNG 聚合搜索，<br>由 Cheems 自己设计和展示搜索结果。</p>
+      <form id="form" class="box" action="/" method="get" role="search">
+        <span class="icon" aria-hidden="true">⌕</span>
+        <input id="query" name="q" type="search" autocomplete="off" enterkeyhint="search" autofocus required
+          placeholder="搜索网页、教程、项目……">
+        <button id="searchBtn" type="submit">搜索 ↗</button>
+      </form>
+      <div class="tools" aria-label="搜索分类">
+        <button type="button" class="chip" data-category="general" aria-pressed="true">🌐 网页</button>
+        <button type="button" class="chip" data-category="images" aria-pressed="false">🖼️ 图片</button>
+        <button type="button" class="chip" data-category="videos" aria-pressed="false">▶ 视频</button>
+      </div>
+    </section>
+    <div class="info" id="meta">由开源 SearXNG 提供网页检索 · 安全搜索已启用</div>
+    <main id="results" aria-live="polite"></main>
+    <div id="state" role="status"></div>
+    <button id="more" type="button">加载更多结果 ↓</button>
+    <footer>🦊 Cheems Search · 搜索结果由 SearXNG 聚合第三方搜索来源<br>
+      <a href="https://github.com/searxng/searxng" rel="noreferrer">开源搜索项目 SearXNG</a> ·
+      <a href="https://www.mozilla.org/firefox/" rel="noreferrer">Firefox / GeckoView</a></footer>
+  </div>
+  <script>
+  'use strict';
+  const form = document.getElementById('form');
+  const input = document.getElementById('query');
+  const results = document.getElementById('results');
+  const state = document.getElementById('state');
+  const more = document.getElementById('more');
+  const meta = document.getElementById('meta');
+  const buttons = Array.from(document.querySelectorAll('[data-category]'));
+  let currentCategory = 'general', currentQuery = '', currentPage = 1, controller = null;
+
+  const url = new URL(window.location.href);
+  const initialCategory = url.searchParams.get('category') || 'general';
+  if (['general','images','videos'].includes(initialCategory)) currentCategory = initialCategory;
+  function updateChips() {
+    buttons.forEach(function(b) { b.setAttribute('aria-pressed', String(b.dataset.category === currentCategory)); });
+  }
+  updateChips();
+  buttons.forEach(function(b) {
+    b.addEventListener('click', function() {
+      currentCategory = b.dataset.category;
+      updateChips();
+      if (input.value.trim()) doSearch(input.value.trim(), 1);
+    });
+  });
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (input.value.trim()) doSearch(input.value.trim(), 1);
+  });
+  more.addEventListener('click', function() { if (currentQuery) doSearch(currentQuery, currentPage + 1); });
+
+  function addResult(item) {
+    if (!item || !item.url) return false;
+    let dest;
+    try { dest = new URL(item.url); } catch(e) { return false; }
+    if (!['http:','https:'].includes(dest.protocol)) return false;
+    const card = document.createElement('article');
+    card.className = 'result';
+    const host = document.createElement('span');
+    host.className = 'url'; host.textContent = dest.hostname + dest.pathname;
+    const a = document.createElement('a');
+    a.className = 'title';
+    a.href = dest.href; a.textContent = String(item.title || dest.hostname);
+    a.rel = 'noreferrer';
+    const desc = document.createElement('p');
+    desc.className = 'desc';
+    desc.textContent = String(item.content || item.description || '').slice(0, 650);
+    const engine = document.createElement('p');
+    engine.className = 'engines';
+    engine.textContent = item.engines ? '来源：' + item.engines.join(' · ') : '';
+    card.append(host, a, desc, engine);
+    results.append(card);
+    return true;
+  }
+
+  async function doSearch(q, page) {
+    if (controller) controller.abort();
+    controller = new AbortController();
+    const signal = controller.signal;
+    currentQuery = q;
+    currentPage = page;
+    input.value = q;
+    document.body.classList.add('has-results');
+    if (page === 1) results.replaceChildren();
+    state.textContent = '正在检索互联网中的网页…';
+    more.style.display = 'none';
+    const sp = new URLSearchParams({
+      q: q, format: 'json', categories: currentCategory,
+      pageno: String(page), safesearch: '2'
+    });
+    history.replaceState(null, '', '/?q=' + encodeURIComponent(q) +
+      '&category=' + encodeURIComponent(currentCategory));
+    try {
+      const response = await fetch('/api/search?' + sp.toString(), {
+        headers: {Accept:'application/json'}, signal:signal, cache:'no-store'
+      });
+      if (!response.ok) throw new Error('搜索服务返回 HTTP ' + response.status);
+      const json = await response.json();
+      const items = Array.isArray(json.results) ? json.results : [];
+      let count = 0;
+      items.forEach(function(item) { if (addResult(item)) count++; });
+      state.textContent = count > 0 ? '' : '当前没有更多结果。可以换一个关键词，或检查 SearXNG 搜索源是否可用。';
+      meta.textContent = 'Cheems Search · 第 ' + page + ' 页 · ' + currentCategory +
+        ' · 由 SearXNG 开源聚合引擎提供';
+      if (count >= 8) more.style.display = 'block';
+    } catch(err) {
+      if (err.name === 'AbortError') return;
+      state.textContent = '搜索失败：' + err.message +
+        '。请检查自建 SearXNG 服务是否启动；某些上游搜索服务可能暂时限制访问。';
+    }
+  }
+
+  const q = url.searchParams.get('q');
+  if (q && q.trim()) doSearch(q.trim(), 1);
+  </script>
+</body>
+</html>
