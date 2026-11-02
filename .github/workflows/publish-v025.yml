@@ -1,0 +1,47 @@
+name: Publish Cheems Browser v0.2.5 APK directly
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-v025.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download passing main-branch v0.2.5 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 41391736553 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "CheemsBrowser-V0.2.5-ARM64-APK" \
+            --dir release
+          test -s release/app-debug.apk
+          mv release/app-debug.apk release/CheemsBrowser-v0.2.5-arm64.apk
+          sha256sum release/CheemsBrowser-v0.2.5-arm64.apk
+
+      - name: Release downloadable APK (test version)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.2.5
+          ASSET=release/CheemsBrowser-v0.2.5-arm64.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Cheems Browser v0.2.5 — search repair (Android ARM64)" \
+              --notes "Test build. Adds a separate Search action to the toolbar and a search option for failed website addresses. Due to unstable public SearXNG JSON services, default native Cheems Search transparently switches to Google search webpage as a temporary third-party fallback. Custom SearXNG JSON backends remain supported. This does not create an independent web index; real-device testing remains necessary. Debug signing may differ from prior CI builds." \
+              --prerelease
+          fi
