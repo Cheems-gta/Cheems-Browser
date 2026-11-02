@@ -146,6 +146,9 @@ jobs:
       - name: Fix search entrypoint and unavailable SearXNG (V0.2.5)
         run: python3 tools/fix_search_v025.py
 
+      - name: Native search timeout watchdog and alternatives (V0.2.6)
+        run: python3 tools/fix_search_watchdog_v026.py
+
       - name: Test Cheems Search frontend
         run: python3 -m unittest discover -s search/web -p 'test_*.py' -v
 
@@ -194,6 +197,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsBrowser-V0.2.5-ARM64-APK
+          name: CheemsBrowser-V0.2.6-ARM64-APK
           path: source/CheemsGeckoBrowser/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
