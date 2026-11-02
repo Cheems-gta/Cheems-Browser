@@ -7,7 +7,7 @@ GeckoView engine or claim a public instance can return JSON when it cannot.
 from pathlib import Path
 import sys
 root=Path(sys.argv[1] if len(sys.argv)>1 else "source/CheemsGeckoBrowser")
-activity=root/"app/src/main/java/io/cheems/browser/CheemsSearchActivity.kt"
+activity=Path("android/CheemsSearchActivity.kt")
 s=activity.read_text(encoding="utf-8")
 
 def apply(old,new,label):
@@ -112,6 +112,12 @@ apply(
     "don't automatically redirect after backend failure")
 
 activity.write_text(s,encoding="utf-8")
+# Build step previously copied this file BEFORE V0.2.3/V0.2.5 patches!
+# Synchronize final patched search code into the Android project, otherwise
+# CI compiles an obsolete CheemsSearchActivity that still has old 21s waits.
+installed=root/"app/src/main/java/io/cheems/browser/CheemsSearchActivity.kt"
+installed.write_text(s,encoding="utf-8")
+
 gradle=root/"app/build.gradle.kts"
 g=gradle.read_text(encoding="utf-8")
 if g.count('versionCode = 7')!=1 or g.count('versionName = "0.2.5"')!=1:
