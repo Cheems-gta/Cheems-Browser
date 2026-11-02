@@ -140,6 +140,9 @@ jobs:
       - name: Keep native loading UI and avoid blind search fallback (V0.2.3)
         run: python3 tools/fix_loading_surface_v023.py
 
+      - name: Fast loading without blocking pages (V0.2.4)
+        run: python3 tools/fix_fast_loading_v024.py
+
       - name: Test Cheems Search frontend
         run: python3 -m unittest discover -s search/web -p 'test_*.py' -v
 
@@ -188,6 +191,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsBrowser-V0.2.3-ARM64-APK
+          name: CheemsBrowser-V0.2.4-ARM64-APK
           path: source/CheemsGeckoBrowser/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
