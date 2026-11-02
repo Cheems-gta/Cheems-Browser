@@ -1,0 +1,14 @@
+name: Probe public SearXNG JSON API
+
+on:
+  push:
+    branches: [fix/search-logic-v025]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify JSON availability
+        run: python3 tools/search_api_probe.py
