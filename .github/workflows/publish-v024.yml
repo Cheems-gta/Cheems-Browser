@@ -1,0 +1,47 @@
+name: Publish Cheems Browser v0.2.4 direct APK download
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-v024.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download already verified v0.2.4 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 41390107029 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "CheemsBrowser-V0.2.4-ARM64-APK" \
+            --dir release
+          test -s release/app-debug.apk
+          mv release/app-debug.apk release/CheemsBrowser-v0.2.4-arm64.apk
+          sha256sum release/CheemsBrowser-v0.2.4-arm64.apk
+
+      - name: Publish downloadable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.2.4
+          ASSET=release/CheemsBrowser-v0.2.4-arm64.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Cheems Browser v0.2.4 — Android ARM64" \
+              --notes "Cheems Browser v0.2.4 test build for Android ARM64 phones. Mozilla GeckoView browser + Cheems Search powered by SearXNG. Direct APK download, no ZIP extraction needed. This is a debug-signed test build, not a production release. Browser rendering, search availability and blank-page behavior still need real-device testing; public SearXNG servers can fail or block requests. Install from a trusted official repository only." \
+              --prerelease
+          fi
