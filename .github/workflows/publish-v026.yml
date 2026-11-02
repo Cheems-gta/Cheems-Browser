@@ -1,0 +1,47 @@
+name: Publish Cheems Browser v0.2.6 APK directly
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-v026.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch successful main branch APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 41393592988 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "CheemsBrowser-V0.2.6-ARM64-APK" \
+            --dir release
+          test -s release/app-debug.apk
+          mv release/app-debug.apk release/CheemsBrowser-v0.2.6-arm64.apk
+          sha256sum release/CheemsBrowser-v0.2.6-arm64.apk
+
+      - name: Publish GitHub Release (test build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.2.6
+          ASSET=release/CheemsBrowser-v0.2.6-arm64.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Cheems Browser v0.2.6 — Search loading repair (ARM64)" \
+              --notes "TEST BUILD. Fixes a genuine integration mistake: previous patches modified android/CheemsSearchActivity.kt but GitHub Actions had already copied the old activity into the build project, so changes never shipped in v0.2.3–v0.2.5. v0.2.6 now copies the final patched search code into the actual APK source. Search UI provides immediate, clearly labeled Google backup (third party), 4-second native timeout recovery, retry, and SearXNG server selection. Public priv.au SearXNG often responds HTTP 429; an independently deployed SearXNG backend is still required for consistently functional native results. APK compiled in CI; phone runtime still unverified. Debug-signed, ARM64-only." \
+              --prerelease
+          fi
