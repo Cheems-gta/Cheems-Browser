@@ -11,4 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify JSON availability
-        run: python3 tools/search_api_probe.py
+        run: |
+          python3 tools/search_api_probe.py
+          python3 tools/search_html_probe.py
+
