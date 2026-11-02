@@ -45,15 +45,6 @@ edit(
 
 # The direct navigation path already detects keyword input, but use the same
 # native entrypoint rather than duplicating two nearly-identical activity launches.
-edit(
-'''            startActivityForResult(
-                Intent(this, CheemsSearchActivity::class.java)
-                    .putExtra("query", input), 729)
-            return
-''',
-'''            openSearch(input)
-            return
-''',"route normal keywords to search once")
 
 # If a direct host cannot be reached, the failure panel offers a clear
 # "search this site" action instead of repeatedly reloading a dead host.
