@@ -53,6 +53,7 @@ class MainActivity : Activity() {
         var canForward: Boolean = false,
         var keepHome: Boolean = false,
         var painted: Boolean = false,
+        var loaded: Boolean = false,
         var failed: Boolean = false,
         var pendingPopup: Boolean = false
     )
@@ -425,6 +426,7 @@ class MainActivity : Activity() {
         clearFailure()
         val tab = currentTab()
         tab.painted = false
+        tab.loaded = false
         tab.failed = false
         // Keep GeckoView attached and visible during navigation. Re-showing the
         // HOME overlay on every redirect made searches appear to loop to HOME.
@@ -557,6 +559,7 @@ class MainActivity : Activity() {
                 tab.url = url
                 tab.atHome = false
                 tab.painted = false
+                tab.loaded = false
                 tab.failed = false
                 if (tab.pendingPopup) {
                     tab.pendingPopup = false
@@ -578,16 +581,21 @@ class MainActivity : Activity() {
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
-                if (!isCurrentSession(session)) return
+                val tab = findTab(session) ?: return
+                if (tab.keepHome) return
+                tab.loaded = success
+                if (!isCurrent(tab)) return
                 loading.visibility = View.GONE
-                if (!success && !currentTab().keepHome) {
-                    cancelPageTimer()
+                cancelPageTimer()
+                if (!success) {
                     showFailure("网页加载失败", "该网页未能正常加载，可尝试重新加载。")
-                } else if (currentTab().painted && !currentTab().failed) {
-                    cancelPageTimer()
+                } else {
+                    // History restores may reuse an existing painted document
+                    // without another first-contentful-paint notification.
+                    tab.failed = false
                     clearFailure()
+                    showContent(tab)
                 }
-                // Successful loading without first paint remains under timeout watch.
             }
         }
         return session
@@ -627,7 +635,7 @@ class MainActivity : Activity() {
         }
         if (tab.failed && !tab.atHome) {
             showFailure("网页加载失败", "这个标签页未能正常显示，请重试或回到主页。")
-        } else if (!tab.atHome && tab.url.isNotBlank() && !tab.painted) {
+        } else if (!tab.atHome && tab.url.isNotBlank() && !tab.painted && !tab.loaded) {
             // Monitor an unfinished tab after switching back to it.
             startPageTimer(tab.session)
         }
@@ -743,7 +751,7 @@ class MainActivity : Activity() {
             tab.atHome = false
             address.setText(tab.url)
             showContent(tab)
-            if (!tab.painted || tab.failed) openWebUrl(tab.url)
+            if ((!tab.painted && !tab.loaded) || tab.failed) openWebUrl(tab.url)
         } else if (tab.canBack && !tab.atHome) {
             tab.keepHome = false
             tab.session.goBack()

@@ -39,6 +39,7 @@ class BrowserFlowTest {
                 try {
                     val socket = server.accept()
                     workers.execute {
+                        try {
                         socket.use {
                             val input = it.getInputStream().bufferedReader()
                             val path = input.readLine()?.split(" ")?.getOrNull(1) ?: "/"
@@ -53,6 +54,9 @@ class BrowserFlowTest {
                                 it.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${html.size}\r\nConnection: close\r\n\r\n".toByteArray())
                                 it.getOutputStream().write(html)
                             }
+                        }
+                        } catch (_: java.io.IOException) {
+                            // Browser cancellation/teardown can close a response midway.
                         }
                     }
                 } catch (_: Exception) { }
@@ -91,7 +95,12 @@ class BrowserFlowTest {
             SystemClock.sleep(100)
         }
         screenshot("failure")
-        fail("Timed out: $label")
+        var state = ""
+        scenario.onActivity { activity ->
+            val root = activity.findViewById<ViewGroup>(android.R.id.content)
+            state = "url=${address(activity)} painted=${currentPainted(activity)} home=${root.findViewWithTag<View>("browser_home").visibility} failure=${root.findViewWithTag<View>("browser_failure").visibility}"
+        }
+        fail("Timed out: $label ($state)")
     }
     private fun address(activity: MainActivity): String =
         (views(activity.findViewById(android.R.id.content)).single { it.contentDescription == "地址栏" } as EditText).text.toString()
@@ -101,15 +110,22 @@ class BrowserFlowTest {
         val tab = method.invoke(activity)
         return tab.javaClass.getDeclaredField("painted").apply { isAccessible = true }.getBoolean(tab)
     }
-    private fun rendered(path: String) = waitState("render $path") { activity ->
-        val root = activity.findViewById<ViewGroup>(android.R.id.content)
-        address(activity) == base + path && currentPainted(activity) &&
-            root.findViewWithTag<View>("browser_home").visibility == View.GONE &&
-            root.findViewWithTag<View>("browser_failure").visibility == View.GONE
+    private fun rendered(path: String) {
+        waitState("render $path") { activity ->
+            val root = activity.findViewById<ViewGroup>(android.R.id.content)
+            address(activity) == base + path &&
+                root.findViewWithTag<View>("browser_home").visibility == View.GONE &&
+                root.findViewWithTag<View>("browser_failure").visibility == View.GONE
+        }
+        // Check visible webpage content rather than a paint callback: BFCache
+        // history restoration need not emit a second first-contentful-paint.
+        assertTrue("Missing actual webpage content: $path",
+            device.wait(Until.hasObject(By.text("Fixture $path")), 15000))
     }
     private fun screenshot(name: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "$name.png"))
+        val directory = File("/sdcard/Download/cheems-verification").apply { mkdirs() }
+        device.takeScreenshot(File(directory, "$name.png"))
     }
 
     @Test fun rendersChineseScrollsAndOpensNewTab() {
