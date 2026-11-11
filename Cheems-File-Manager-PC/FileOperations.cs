@@ -42,7 +42,9 @@ public static class FileOperations
         "rename" => Rename(S(args, "path"), S(args, "name")),
         "mkdir" => NewFolder(S(args, "path"), S(args, "name")),
         "recycle" => Recycle(Paths(args)),
-        "extract" => Extract(S(args, "path"), S(args, "target")),
+        "extract" => ExpandedArchive.Extract(S(args, "path"), S(args, "target")),
+        "shell" => Shell(S(args, "cwd"), S(args, "command")),
+        "terminalWindow" => OpenTerminalWindow(S(args, "cwd")),
         "zip" => MakeZip(Paths(args), S(args, "target")),
         "properties" => Properties(S(args, "path")),
         "hash" => FileHash(S(args, "path")),
@@ -425,65 +427,55 @@ public static class FileOperations
         return new { count = done };
     }
 
-    private static object Extract(string sourceInput, string destInput)
-    {
-        string source = Path.GetFullPath(sourceInput);
-        string dest = Path.GetFullPath(destInput);
-        if (!File.Exists(source) || !Directory.Exists(dest))
-            throw new IOException("压缩包或目标目录不存在");
-        string name = Path.GetFileNameWithoutExtension(source);
-        if (name.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
-            name = name[..^4];
-        string folder = Unique(dest, name + "_解压", true);
-        Directory.CreateDirectory(folder);
-        int count = 0;
-        long total = 0;
-        try
-        {
-            using var archive = ArchiveFactory.OpenArchive(source);
-            foreach (var entry in archive.Entries)
-            {
-                if (++count > MaxExtractFiles) throw new IOException("压缩包项目超过 4000 个，已中止");
-                string key = entry.Key?.Replace('\\', '/') ?? "";
-                if (key.Length == 0) continue;
-                if (key.StartsWith('/') || key.Contains('\0') ||
-                    (key.Length >= 2 && char.IsLetter(key[0]) && key[1] == ':'))
-                    throw new IOException("压缩包包含异常文件路径");
-                string output = Path.GetFullPath(Path.Combine(folder,
-                    key.Replace('/', Path.DirectorySeparatorChar)));
-                if (!ChildOf(output, folder))
-                    throw new IOException("已拦截试图解压到目标文件夹以外的路径");
 
-                if (entry.IsDirectory)
-                {
-                    Directory.CreateDirectory(output);
-                    continue;
-                }
-                if (entry.Size > MaxExtractFileBytes)
-                    throw new IOException("压缩包内单个文件超过 512MB 初版安全限制");
-                Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                if (File.Exists(output)) throw new IOException("压缩包中存在重复路径：" + key);
-                long current = 0;
-                using var input = entry.OpenEntryStream();
-                using var result = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                byte[] buffer = new byte[64 * 1024];
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    current += read;
-                    total += read;
-                    if (current > MaxExtractFileBytes || total > MaxExtractTotalBytes)
-                        throw new IOException("解压超过安全限制（单文件512MB/总计2GB）");
-                    result.Write(buffer, 0, read);
-                }
-            }
-        }
-        catch
+    // Terminal commands are entered by the user, never built from selected
+    // filenames. It runs as the current user, without administrator elevation.
+    private static object Shell(string path,string command)
+    {
+        if(command.Length==0)return new { output="", exitCode=0, cwd=path };
+        if(command.Length>1200)throw new IOException("终端命令不能超过 1200 个字符");
+        string cwd=Path.GetFullPath(path);
+        if(!Directory.Exists(cwd))throw new DirectoryNotFoundException(cwd);
+        string cmd=Path.Combine(Environment.GetFolderPath(
+            Environment.SpecialFolder.System),"cmd.exe");
+        var args=new ProcessStartInfo(cmd)
         {
-            // Incomplete extracted folder is retained to avoid accidental data loss.
-            throw;
+            UseShellExecute=false, RedirectStandardOutput=true,
+            RedirectStandardError=true, CreateNoWindow=true,
+            WorkingDirectory=cwd,
+        };
+        args.ArgumentList.Add("/d");
+        args.ArgumentList.Add("/c");
+        args.ArgumentList.Add(command);
+        using var p=Process.Start(args)??throw new IOException("CMD 进程无法启动");
+        var stdout=p.StandardOutput.ReadToEndAsync();
+        var stderr=p.StandardError.ReadToEndAsync();
+        if(!p.WaitForExit(8000))
+        {
+            p.Kill(entireProcessTree:true);
+            throw new IOException("命令运行超过 8 秒，已停止。长时间任务请使用独立终端窗口。");
         }
-        return new { folder, files = count };
+        string output=stdout.GetAwaiter().GetResult();
+        string errors=stderr.GetAwaiter().GetResult();
+        if(output.Length>18000)output=output[..18000]+"\n…已截断输出";
+        if(errors.Length>4000)errors=errors[..4000]+"\n…已截断错误输出";
+        if(errors.Length>0)output+=("\n"+errors);
+        return new {output,exitCode=p.ExitCode,cwd};
+    }
+
+    private static object OpenTerminalWindow(string path)
+    {
+        string cwd=Path.GetFullPath(path);
+        if(!Directory.Exists(cwd))throw new DirectoryNotFoundException(cwd);
+        string executable=Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),"cmd.exe");
+        var process=new ProcessStartInfo(executable)
+        {
+            UseShellExecute=true,
+            WorkingDirectory=cwd,
+        };
+        Process.Start(process);
+        return new {message="已在当前文件夹启动 Windows CMD 终端"};
     }
 
     private static object MakeZip(string[] sources, string destInput)
