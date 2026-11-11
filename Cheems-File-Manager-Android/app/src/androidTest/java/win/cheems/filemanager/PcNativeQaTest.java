@@ -55,7 +55,7 @@ public final class PcNativeQaTest {
      */
     private static File createPeFixture(File directory) throws Exception {
         byte[] png=android.util.Base64.decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Yf7fXsAAAAASUVORK5CYII=",
+            "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAVUlEQVR4nO3PQQ3AIADAQEAW4vGEgk3EHpclPQXtvGc/48eWDviqAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0B7QUYKQNIcXLPEQAAAABJRU5ErkJggg==",
             android.util.Base64.DEFAULT);
         byte[] pe=new byte[2048];
         pe[0]='M';pe[1]='Z';
