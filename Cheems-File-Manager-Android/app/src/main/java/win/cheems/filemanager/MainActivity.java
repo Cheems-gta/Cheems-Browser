@@ -340,7 +340,7 @@ public final class MainActivity extends Activity {
 
     private void permissionInfo() {
         new AlertDialog.Builder(this).setTitle("CFM v0.4 · 文件权限")
-            .setMessage("本版使用 Android 官方“所有文件访问”授权。\n"
+            .setMessage("普通模式使用 Android 官方“所有文件访问”授权。\n"
                 + "只需授权一次，除非你卸载应用、清除数据或在系统设置中撤销权限。\n\n"
                 + "无需 ROOT，不依赖 Shizuku。Android 13 及以上的 Shizuku 兼容方案会另行开发。"
                 + "\n\n注意：授权不等于拥有访问其他应用私有目录的权限。")
@@ -395,6 +395,10 @@ public final class MainActivity extends Activity {
         p.rows.removeAllViews();
         p.selected=null;
         addParentRow(p);
+        if (isPrivilegedPath(p.folder)) {
+            refreshPrivileged(p,p.folder);
+            return;
+        }
         File[] arr=p.folder.listFiles();
         if (arr==null) {
             rowInfo(p,"该目录不可访问（系统权限限制）");
@@ -447,7 +451,10 @@ public final class MainActivity extends Activity {
     }
 
     private void addFileRow(Pane p,File file) {
-        boolean folder=file.isDirectory();
+        addFileRow(p,file,file.isDirectory(),file.lastModified());
+    }
+
+    private void addFileRow(Pane p,File file,boolean folder,long modified) {
         LinearLayout line=new LinearLayout(this);
         line.setOrientation(LinearLayout.HORIZONTAL);
         line.setGravity(Gravity.CENTER_VERTICAL);
@@ -474,7 +481,7 @@ public final class MainActivity extends Activity {
         name.setMaxLines(1);
         words.addView(name,new LinearLayout.LayoutParams(-1,dp(23)));
 
-        TextView subtitle=text(stamp.format(new Date(file.lastModified())),11,MUTED);
+        TextView subtitle=text(stamp.format(new Date(modified)),11,MUTED);
         subtitle.setSingleLine(true);
         subtitle.setEllipsize(TextUtils.TruncateAt.END);
         words.addView(subtitle,new LinearLayout.LayoutParams(-1,dp(18)));
@@ -482,10 +489,14 @@ public final class MainActivity extends Activity {
         line.setOnClickListener(v -> {
             active=p;
             if(folder) {
-                if(!file.canRead()) {
+                if(!file.canRead() && !isPrivilegedPath(file)) {
                     selectPane(p);
                     new AlertDialog.Builder(this).setMessage("此目录可能受到 Android 系统限制，无法读取。")
                         .setPositiveButton("确定",null).show();
+                    return;
+                }
+                if (isPrivilegedPath(file) && privileged == null) {
+                    shizukuDialog();
                     return;
                 }
                 navigate(p,file);
@@ -500,7 +511,8 @@ public final class MainActivity extends Activity {
             p.selected=file;
             mark(p,line);
             selectPane(p);
-            fileContextMenu(p, file);
+            if (isPrivilegedPath(file)) privilegedItemMenu(p,file,folder);
+            else fileContextMenu(p, file);
             return true;
         });
     }
@@ -552,7 +564,9 @@ public final class MainActivity extends Activity {
     }
 
     private void switchTab(Pane p,File folder) {
-        if(!folder.isDirectory() || !insideRoot(folder)){say("文件夹不可访问");return;}
+        if((!folder.isDirectory() && !isPrivilegedPath(folder)) || !insideRoot(folder)){
+            say("文件夹不可访问");return;
+        }
         active=p;
         p.folder=folder;
         getPreferences(MODE_PRIVATE).edit().putString(p.pref,folder.getAbsolutePath()).apply();
@@ -567,9 +581,14 @@ public final class MainActivity extends Activity {
     }
 
     private void navigate(Pane p, File folder) {
-        if (!insideRoot(folder) || !folder.isDirectory() || !folder.canRead()) {
+        if (!insideRoot(folder) ||
+            (!isPrivilegedPath(folder) && (!folder.isDirectory() || !folder.canRead()))) {
             new AlertDialog.Builder(this).setMessage("不能访问这个路径。")
                 .setPositiveButton("确定",null).show();
+            return;
+        }
+        if (isPrivilegedPath(folder) && privileged == null) {
+            shizukuDialog();
             return;
         }
         p.folder=folder;
@@ -820,7 +839,7 @@ public final class MainActivity extends Activity {
     private void moreMenu() {
         final String[] items = {"搜索文件", "新建文件夹", "返回上一级", "刷新",
             "授权设置与说明", "支持的解压格式", "Shizuku 连接"};
-        new AlertDialog.Builder(this).setTitle("CFM v0.3").setItems(items, (d, which) -> {
+        new AlertDialog.Builder(this).setTitle("CFM v0.5").setItems(items, (d, which) -> {
             switch (which) {
                 case 0: searchDialog(); break;
                 case 1: newFolder(); break;
@@ -946,6 +965,10 @@ public final class MainActivity extends Activity {
 
     private void searchDialog() {
         if (!canAccess()) { requestFilesPermission(); return; }
+        if (isPrivilegedPath(active.folder)) {
+            say("Shizuku 只读模式暂不支持递归搜索");
+            return;
+        }
         final Pane pane = active;
         EditText field = new EditText(this);
         field.setSingleLine(true);
