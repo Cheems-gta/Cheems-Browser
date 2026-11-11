@@ -41,6 +41,7 @@ public static class FileOperations
         "move" => Transfer(Paths(args), S(args, "target"), true),
         "rename" => Rename(S(args, "path"), S(args, "name")),
         "mkdir" => NewFolder(S(args, "path"), S(args, "name")),
+        "newHtml" => NewHtml(S(args, "path"), S(args, "name")),
         "recycle" => Recycle(Paths(args)),
         "extract" => ExpandedArchive.Extract(S(args, "path"), S(args, "target")),
         "shell" => Shell(S(args, "cwd"), S(args, "command")),
@@ -311,6 +312,26 @@ public static class FileOperations
             value.EndsWith(' ') || value.EndsWith('.'))
             throw new IOException("请输入不包含路径字符的合法文件名");
         return value;
+    }
+
+    private static object NewHtml(string parent, string name)
+    {
+        string directory=Path.GetFullPath(parent);
+        if(!Directory.Exists(directory))throw new DirectoryNotFoundException(directory);
+        string safe=ValidName(name);
+        if(!safe.EndsWith(".html",StringComparison.OrdinalIgnoreCase) &&
+           !safe.EndsWith(".htm",StringComparison.OrdinalIgnoreCase))
+            throw new IOException("文件名必须是 .html 或 .htm");
+        string target=Path.Combine(directory,safe);
+        if(File.Exists(target)||Directory.Exists(target))
+            throw new IOException("目标文件已存在");
+        string template="<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n"+
+            "  <meta charset=\"utf-8\">\n"+
+            "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"+
+            "  <title>Cheems HTML</title>\n</head>\n<body>\n"+
+            "  <h1>Hello, HTML!</h1>\n</body>\n</html>\n";
+        File.WriteAllText(target,template,new UTF8Encoding(false));
+        return new { path=target };
     }
 
     private static object NewFolder(string parent, string name)
