@@ -5,6 +5,14 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.LinearGradient;
+import android.graphics.RadialGradient;
+import android.graphics.PixelFormat;
+import android.graphics.Shader;
+import android.graphics.ColorFilter;
+import android.graphics.drawable.Drawable;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -33,6 +41,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,10 +53,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
-    private static final int BACK = Color.rgb(18, 18, 18);
-    private static final int PANEL = Color.rgb(43, 43, 43);
+    private static final int BACK = Color.rgb(11, 22, 43);
+    private static final int PANEL = Color.argb(107, 38, 64, 85);
     private static final int LIGHT = Color.rgb(232, 232, 232);
-    private static final int MUTED = Color.rgb(169, 169, 169);
+    private static final int MUTED = Color.rgb(185, 207, 225);
     private final File root = Environment.getExternalStorageDirectory();
     private final Pane left = new Pane("左", "left");
     private final Pane right = new Pane("右", "right");
@@ -64,6 +73,8 @@ public final class MainActivity extends Activity {
         File folder;
         File selected;
         LinearLayout rows;
+        LinearLayout tabs;
+        final ArrayList<File> openFolders = new ArrayList<>();
         TextView dirLabel;
         Pane(String title, String pref) { this.title = title; this.pref = pref; }
     }
@@ -74,6 +85,8 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(35,35,35));
         left.folder = restore(left);
         right.folder = restore(right);
+        left.openFolders.add(left.folder);
+        right.openFolders.add(right.folder);
         createUi();
         renderPermissionState();
     }
@@ -91,8 +104,51 @@ public final class MainActivity extends Activity {
     private int dp(float n) { return (int)(n * getResources().getDisplayMetrics().density + .5f); }
     private GradientDrawable color(int c) {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(c); d.setCornerRadius(dp(6));
+        d.setColor(c); d.setCornerRadius(dp(12));
         return d;
+    }
+    private GradientDrawable glassPanel(boolean selected) {
+        GradientDrawable d = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            selected ? new int[]{0xB95B839F,0xA9284567,0x9D172D4D} :
+                       new int[]{0xAD41627C,0x96304D6B,0x911B314F});
+        d.setCornerRadius(dp(18));
+        d.setStroke(dp(1), selected ? 0xB7B5E4FF : 0x7375AECF);
+        return d;
+    }
+    private GradientDrawable glassCard(boolean selected) {
+        GradientDrawable d = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            selected ? new int[]{0xD27AACCB,0xB84E799A,0xB6396084} :
+                       new int[]{0xAE567B98,0x9B365473,0x8D29415C});
+        d.setCornerRadius(dp(13));
+        d.setStroke(dp(1), selected ? 0xDDE0F7FF : 0x7389C0DA);
+        return d;
+    }
+    private static final class GlassBackdrop extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        @Override public void draw(Canvas canvas) {
+            float w = getBounds().width(), h = getBounds().height();
+            if (w < 1 || h < 1) return;
+            paint.setShader(new LinearGradient(0, 0, w, h,
+                new int[]{0xFF091524,0xFF204B66,0xFF0C1E36},null,
+                Shader.TileMode.CLAMP));
+            canvas.drawRect(0, 0, w, h, paint);
+            paint.setShader(new RadialGradient(w * .12f, h * .13f,
+                Math.max(w,h) * .65f,
+                new int[]{0x875CB0D3,0x355490B3,0x003C89D0},
+                new float[]{0f,.55f,1f},Shader.TileMode.CLAMP));
+            canvas.drawRect(0,0,w,h,paint);
+            paint.setShader(new RadialGradient(w * .92f, h * .89f,
+                Math.max(w,h) * .55f,
+                new int[]{0x506880DC,0x255E91CC,0x003C89D0},
+                new float[]{0f,.5f,1f},Shader.TileMode.CLAMP));
+            canvas.drawRect(0,0,w,h,paint);
+            paint.setShader(null);
+        }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
+        @Override public void setColorFilter(ColorFilter filter) { paint.setColorFilter(filter); invalidateSelf(); }
+        @Override public int getOpacity() { return PixelFormat.OPAQUE; }
     }
     private TextView text(String s, int size, int color) {
         TextView view = new TextView(this);
@@ -103,7 +159,7 @@ public final class MainActivity extends Activity {
         Button b = new Button(this);
         b.setText(label); b.setAllCaps(false);
         b.setTextColor(Color.WHITE); b.setTextSize(14);
-        b.setBackground(color(Color.rgb(49,49,49)));
+        b.setBackground(glassCard(false));
         b.setOnClickListener(v -> {
             try { click.run(); } catch (Exception e) { fail(e); }
         });
@@ -112,7 +168,7 @@ public final class MainActivity extends Activity {
     private void createUi() {
         host = new LinearLayout(this);
         host.setOrientation(LinearLayout.VERTICAL);
-        host.setBackgroundColor(BACK);
+        host.setBackground(new GlassBackdrop());
         setContentView(host);
         // Android 15+ enforces edge-to-edge for target SDK 35: keep our header
         // and file rows away from the system status/navigation bars.
@@ -126,8 +182,11 @@ public final class MainActivity extends Activity {
 
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
-        heading.setPadding(dp(12),dp(5),dp(8),dp(7));
-        host.addView(heading);
+        heading.setPadding(dp(12),dp(8),dp(10),dp(10));
+        heading.setBackground(glassPanel(false));
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(-1,-2);
+        headerLp.setMargins(dp(7),dp(7),dp(7),dp(7));
+        host.addView(heading,headerLp);
 
         LinearLayout topBar = new LinearLayout(this);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -137,7 +196,7 @@ public final class MainActivity extends Activity {
         pathView = text(root.getAbsolutePath() + "/", 18, LIGHT);
         pathView.setSingleLine(true);
         pathView.setGravity(Gravity.CENTER_VERTICAL);
-        pathView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        pathView.setEllipsize(TextUtils.TruncateAt.END);
         pathView.setOnClickListener(v -> promptPath());
         topBar.addView(pathView, new LinearLayout.LayoutParams(0, dp(45), 1));
         Button search = btn("⌕", this::searchDialog);
@@ -149,7 +208,7 @@ public final class MainActivity extends Activity {
         menuParams.setMargins(dp(5), 0, 0, 0);
         topBar.addView(menu, menuParams);
 
-        counts = text("Cheems File Manager · v0.3", 12, MUTED);
+        counts = text("Cheems File Manager · v0.4", 12, MUTED);
         heading.addView(counts);
 
         fileArea = new LinearLayout(this);
@@ -168,22 +227,33 @@ public final class MainActivity extends Activity {
     private void createPane(Pane pane) {
         LinearLayout frame = new LinearLayout(this);
         frame.setOrientation(LinearLayout.VERTICAL);
-        frame.setBackgroundColor(PANEL);
+        frame.setBackground(glassPanel(false));
         LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(0,-1,1);
-        fp.setMargins(dp(1),0,dp(1),0);
-        fileArea.addView(frame, fp);
+        fp.setMargins(dp(5),dp(2),dp(5),dp(5));
+        fileArea.addView(frame,fp);
+
+        // Each open directory has a compact glass tab and its own overflow menu.
+        HorizontalScrollView tabScroller = new HorizontalScrollView(this);
+        tabScroller.setHorizontalScrollBarEnabled(false);
+        pane.tabs = new LinearLayout(this);
+        pane.tabs.setOrientation(LinearLayout.HORIZONTAL);
+        pane.tabs.setPadding(dp(4),dp(5),dp(4),dp(3));
+        tabScroller.addView(pane.tabs);
+        frame.addView(tabScroller,new LinearLayout.LayoutParams(-1,dp(42)));
 
         pane.dirLabel = text(pane.title + " · /",11, MUTED);
         pane.dirLabel.setSingleLine(true);
-        pane.dirLabel.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        pane.dirLabel.setPadding(dp(9),dp(5),dp(5),dp(6));
+        pane.dirLabel.setEllipsize(TextUtils.TruncateAt.END);
+        pane.dirLabel.setPadding(dp(10),dp(3),dp(5),dp(8));
         pane.dirLabel.setOnClickListener(v -> selectPane(pane));
         frame.addView(pane.dirLabel);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(false);
         pane.rows = new LinearLayout(this);
         pane.rows.setOrientation(LinearLayout.VERTICAL);
+        pane.rows.setPadding(dp(2),dp(1),dp(2),dp(4));
         scroll.addView(pane.rows);
         frame.addView(scroll, new LinearLayout.LayoutParams(-1,0,1));
     }
@@ -230,7 +300,7 @@ public final class MainActivity extends Activity {
     }
 
     private void permissionInfo() {
-        new AlertDialog.Builder(this).setTitle("CFM v0.3 · 文件权限")
+        new AlertDialog.Builder(this).setTitle("CFM v0.4 · 文件权限")
             .setMessage("本版使用 Android 官方“所有文件访问”授权。\n"
                 + "只需授权一次，除非你卸载应用、清除数据或在系统设置中撤销权限。\n\n"
                 + "无需 ROOT，不依赖 Shizuku。Android 13 及以上的 Shizuku 兼容方案会另行开发。"
@@ -267,10 +337,12 @@ public final class MainActivity extends Activity {
             counts.setText("文件夹: "+dirs+"  文件: "+files+"  存储: "
                 +String.format(Locale.getDefault(),"%.1f/%.1fG",used,total));
         } catch (Exception e) {
-            counts.setText("文件夹: "+dirs+"  文件: "+files+"  · CFM v0.3");
+            counts.setText("文件夹: "+dirs+"  文件: "+files+"  · CFM v0.4");
         }
         left.dirLabel.setText((active==left?"● ":"  ")+left.folder.getAbsolutePath());
         right.dirLabel.setText((active==right?"● ":"  ")+right.folder.getAbsolutePath());
+        renderTabs(left);
+        renderTabs(right);
     }
 
     private void refreshBoth() {
@@ -283,6 +355,7 @@ public final class MainActivity extends Activity {
     private void refresh(Pane p) {
         p.rows.removeAllViews();
         p.selected=null;
+        addParentRow(p);
         File[] arr=p.folder.listFiles();
         if (arr==null) {
             rowInfo(p,"该目录不可访问（系统权限限制）");
@@ -301,32 +374,72 @@ public final class MainActivity extends Activity {
         p.rows.addView(text);
     }
 
+    private void addParentRow(Pane p) {
+        LinearLayout line = new LinearLayout(this);
+        line.setOrientation(LinearLayout.HORIZONTAL);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setBackground(glassCard(false));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,dp(57));
+        lp.setMargins(dp(4),dp(4),dp(4),dp(3));
+        p.rows.addView(line,lp);
+        TextView icon = text("📁",19,LIGHT);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(color(0x9A283A55));
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(40),dp(40));
+        iconLp.setMargins(dp(6),0,dp(9),0);
+        line.addView(icon,iconLp);
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setGravity(Gravity.CENTER_VERTICAL);
+        line.addView(words,new LinearLayout.LayoutParams(0,-1,1));
+        TextView top = text("..",15,Color.WHITE);
+        top.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        top.setSingleLine(true);
+        words.addView(top);
+        TextView sub = text(p.folder.equals(root)?"已到共享存储根目录":"返回上一级",10,MUTED);
+        sub.setSingleLine(true);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(sub);
+        line.setOnClickListener(v-> {
+            File parent=p.folder.getParentFile();
+            if(parent!=null && insideRoot(parent)) navigate(p,parent);
+            else say("已经在根目录");
+        });
+    }
+
     private void addFileRow(Pane p,File file) {
         boolean folder=file.isDirectory();
         LinearLayout line=new LinearLayout(this);
         line.setOrientation(LinearLayout.HORIZONTAL);
         line.setGravity(Gravity.CENTER_VERTICAL);
-        line.setBackgroundColor(PANEL);
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(53));
+        line.setBackground(glassCard(false));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(62));
+        lp.setMargins(dp(4),dp(4),dp(4),dp(3));
         p.rows.addView(line,lp);
-        TextView icon=text(folder ? "📁" : "📄",20,LIGHT);
+
+        TextView icon=text(folder ? "📁" :
+            ArchiveExtractor.supported(file) ? "🗜" : "📄",20,LIGHT);
         icon.setGravity(Gravity.CENTER);
-        line.addView(icon,new LinearLayout.LayoutParams(dp(38),-1));
+        icon.setBackground(color(folder ? 0x976B542A : 0x8B345B84));
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(42),dp(43));
+        iconLp.setMargins(dp(6),0,dp(9),0);
+        line.addView(icon,iconLp);
+
         LinearLayout words=new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setGravity(Gravity.CENTER_VERTICAL);
         line.addView(words,new LinearLayout.LayoutParams(0,-1,1));
-        TextView name=text(file.getName(),13,LIGHT);
+        TextView name=text(file.getName(),13,Color.WHITE);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        words.addView(name);
+        name.setMaxLines(1);
+        words.addView(name,new LinearLayout.LayoutParams(-1,dp(23)));
+
         TextView subtitle=text(stamp.format(new Date(file.lastModified())),11,MUTED);
-        words.addView(subtitle);
-
-        View divider=new View(this);
-        divider.setBackgroundColor(Color.rgb(58,58,58));
-        p.rows.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
-
+        subtitle.setSingleLine(true);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(subtitle,new LinearLayout.LayoutParams(-1,dp(18)));
+        line.setPadding(0,0,dp(5),0);
         line.setOnClickListener(v -> {
             active=p;
             if(folder) {
@@ -336,14 +449,12 @@ public final class MainActivity extends Activity {
                         .setPositiveButton("确定",null).show();
                     return;
                 }
-                p.folder=file;
-                getPreferences(MODE_PRIVATE).edit().putString(p.pref,file.getAbsolutePath()).apply();
-                refresh(p);
+                navigate(p,file);
             } else {
                 p.selected=file;
                 mark(p,line);
+                selectPane(p);
             }
-            selectPane(p);
         });
         line.setOnLongClickListener(v -> {
             active=p;
@@ -358,10 +469,62 @@ public final class MainActivity extends Activity {
     private void mark(Pane p,View chosen) {
         for(int i=0;i<p.rows.getChildCount();i++) {
             View v=p.rows.getChildAt(i);
-            if(v instanceof LinearLayout) {
-                v.setBackgroundColor(v==chosen ? Color.rgb(57,87,104) : PANEL);
-            }
+            if(v instanceof LinearLayout) v.setBackground(glassCard(v==chosen));
         }
+    }
+
+    private void renderTabs(Pane pane) {
+        if(pane.tabs==null) return;
+        pane.tabs.removeAllViews();
+        for(File folder: new ArrayList<>(pane.openFolders)) {
+            LinearLayout chip = new LinearLayout(this);
+            chip.setOrientation(LinearLayout.HORIZONTAL);
+            chip.setGravity(Gravity.CENTER_VERTICAL);
+            chip.setBackground(glassCard(folder.equals(pane.folder)));
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2,dp(34));
+            cp.setMargins(dp(2),0,dp(4),0);
+            pane.tabs.addView(chip,cp);
+
+            String tabName = folder.equals(root) ? "根目录" : folder.getName();
+            TextView label = text("📁 "+tabName,10,LIGHT);
+            label.setSingleLine(true);
+            label.setMaxWidth(dp(90));
+            label.setEllipsize(TextUtils.TruncateAt.END);
+            label.setPadding(dp(8),0,dp(2),0);
+            chip.addView(label,new LinearLayout.LayoutParams(-2,dp(32)));
+            label.setGravity(Gravity.CENTER_VERTICAL);
+            label.setOnClickListener(v->switchTab(pane,folder));
+
+            TextView more = text("⋮",18,Color.WHITE);
+            more.setGravity(Gravity.CENTER);
+            chip.addView(more,new LinearLayout.LayoutParams(dp(25),dp(34)));
+            more.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle(tabName)
+                .setItems(new String[]{"切换到此文件夹","关闭此标签","关闭其他标签"},(d,which)->{
+                    if(which==0) switchTab(pane,folder);
+                    else if(which==1) closeTab(pane,folder);
+                    else {
+                        pane.openFolders.clear();
+                        pane.openFolders.add(folder);
+                        switchTab(pane,folder);
+                    }
+                }).show());
+        }
+    }
+
+    private void switchTab(Pane p,File folder) {
+        if(!folder.isDirectory() || !insideRoot(folder)){say("文件夹不可访问");return;}
+        active=p;
+        p.folder=folder;
+        getPreferences(MODE_PRIVATE).edit().putString(p.pref,folder.getAbsolutePath()).apply();
+        refresh(p);selectPane(p);
+    }
+
+    private void closeTab(Pane p,File folder) {
+        p.openFolders.remove(folder);
+        if(p.openFolders.isEmpty()) p.openFolders.add(root);
+        if(p.folder.equals(folder)) switchTab(p,p.openFolders.get(p.openFolders.size()-1));
+        else renderTabs(p);
     }
 
     private void navigate(Pane p, File folder) {
@@ -371,6 +534,10 @@ public final class MainActivity extends Activity {
             return;
         }
         p.folder=folder;
+        if(!p.openFolders.contains(folder)) {
+            if(p.openFolders.size() >= 12) p.openFolders.remove(0);
+            p.openFolders.add(folder);
+        }
         getPreferences(MODE_PRIVATE).edit().putString(p.pref,folder.getAbsolutePath()).apply();
         refresh(p);
         selectPane(p);
