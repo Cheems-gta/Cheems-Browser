@@ -33,6 +33,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Comparator;
 import java.util.Locale;
 import java.text.SimpleDateFormat;
@@ -52,7 +55,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final SimpleDateFormat stamp = new SimpleDateFormat("yy-MM-dd HH:mm", Locale.getDefault());
 
-    private LinearLayout host, fileArea, tools, notice;
+    private LinearLayout host, fileArea, notice;
     private TextView pathView, counts;
     private boolean hadAccess = false;
 
@@ -106,28 +109,47 @@ public final class MainActivity extends Activity {
         });
         return b;
     }
-    private void addTool(String name, Runnable action) {
-        Button b = btn(name, action);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(62), dp(48));
-        p.setMargins(dp(3),0,dp(3),0);
-        tools.addView(b,p);
-    }
     private void createUi() {
         host = new LinearLayout(this);
         host.setOrientation(LinearLayout.VERTICAL);
         host.setBackgroundColor(BACK);
         setContentView(host);
+        // Android 15+ enforces edge-to-edge for target SDK 35: keep our header
+        // and file rows away from the system status/navigation bars.
+        host.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                android.view.WindowInsets.Type.statusBars() |
+                android.view.WindowInsets.Type.navigationBars());
+            host.setPadding(0, bars.top, 0, bars.bottom);
+            return insets;
+        });
 
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
-        heading.setPadding(dp(18),dp(9),dp(14),dp(10));
+        heading.setPadding(dp(12),dp(5),dp(8),dp(7));
         host.addView(heading);
-        pathView = text(root.getAbsolutePath() + "/", 25, LIGHT);
+
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        heading.addView(topBar);
+
+        pathView = text(root.getAbsolutePath() + "/", 18, LIGHT);
         pathView.setSingleLine(true);
+        pathView.setGravity(Gravity.CENTER_VERTICAL);
         pathView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         pathView.setOnClickListener(v -> promptPath());
-        heading.addView(pathView);
-        counts = text("Cheems File Manager · v0.2", 12, MUTED);
+        topBar.addView(pathView, new LinearLayout.LayoutParams(0, dp(45), 1));
+        Button search = btn("⌕", this::searchDialog);
+        search.setTextSize(24);
+        topBar.addView(search, new LinearLayout.LayoutParams(dp(44), dp(42)));
+        Button menu = btn("⋮", this::moreMenu);
+        menu.setTextSize(23);
+        LinearLayout.LayoutParams menuParams = new LinearLayout.LayoutParams(dp(44), dp(42));
+        menuParams.setMargins(dp(5), 0, 0, 0);
+        topBar.addView(menu, menuParams);
+
+        counts = text("Cheems File Manager · v0.3", 12, MUTED);
         heading.addView(counts);
 
         fileArea = new LinearLayout(this);
@@ -141,23 +163,6 @@ public final class MainActivity extends Activity {
         notice.setPadding(dp(24),dp(30),dp(24),dp(10));
         host.addView(notice, new LinearLayout.LayoutParams(-1,0,1));
 
-        tools = new LinearLayout(this);
-        tools.setGravity(Gravity.CENTER_VERTICAL);
-        tools.setOrientation(LinearLayout.HORIZONTAL);
-        HorizontalScrollView bottomScroll = new HorizontalScrollView(this);
-        bottomScroll.setHorizontalScrollBarEnabled(false);
-        bottomScroll.addView(tools);
-        bottomScroll.setBackgroundColor(Color.rgb(39,39,39));
-        host.addView(bottomScroll,new LinearLayout.LayoutParams(-1,dp(57)));
-
-        addTool("‹ 返回", this::goBack);
-        addTool("↑ 上层", this::up);
-        addTool("⇄ 复制", this::copySelected);
-        addTool("＋ 新建", this::newFolder);
-        addTool("✎ 改名", this::renameSelected);
-        addTool("☰ 编辑", this::editSelected);
-        addTool("⟳ 刷新", this::refreshBoth);
-        addTool("⋮ 权限", this::permissionInfo);
     }
 
     private void createPane(Pane pane) {
@@ -225,7 +230,7 @@ public final class MainActivity extends Activity {
     }
 
     private void permissionInfo() {
-        new AlertDialog.Builder(this).setTitle("CFM v0.2 · 文件权限")
+        new AlertDialog.Builder(this).setTitle("CFM v0.3 · 文件权限")
             .setMessage("本版使用 Android 官方“所有文件访问”授权。\n"
                 + "只需授权一次，除非你卸载应用、清除数据或在系统设置中撤销权限。\n\n"
                 + "无需 ROOT，不依赖 Shizuku。Android 13 及以上的 Shizuku 兼容方案会另行开发。"
@@ -262,7 +267,7 @@ public final class MainActivity extends Activity {
             counts.setText("文件夹: "+dirs+"  文件: "+files+"  存储: "
                 +String.format(Locale.getDefault(),"%.1f/%.1fG",used,total));
         } catch (Exception e) {
-            counts.setText("文件夹: "+dirs+"  文件: "+files+"  · CFM v0.2");
+            counts.setText("文件夹: "+dirs+"  文件: "+files+"  · CFM v0.3");
         }
         left.dirLabel.setText((active==left?"● ":"  ")+left.folder.getAbsolutePath());
         right.dirLabel.setText((active==right?"● ":"  ")+right.folder.getAbsolutePath());
@@ -345,6 +350,7 @@ public final class MainActivity extends Activity {
             p.selected=file;
             mark(p,line);
             selectPane(p);
+            fileContextMenu(p, file);
             return true;
         });
     }
@@ -511,6 +517,191 @@ public final class MainActivity extends Activity {
                 }).show();
         }catch(Exception e){fail(e);}
     }
+
+    private void moreMenu() {
+        final String[] items = {"搜索文件", "新建文件夹", "返回上一级", "刷新",
+            "授权设置与说明", "支持的解压格式"};
+        new AlertDialog.Builder(this).setTitle("CFM v0.3").setItems(items, (d, which) -> {
+            switch (which) {
+                case 0: searchDialog(); break;
+                case 1: newFolder(); break;
+                case 2: up(); break;
+                case 3: refreshBoth(); break;
+                case 4: permissionInfo(); break;
+                case 5: archiveInfo(); break;
+                default: break;
+            }
+        }).show();
+    }
+
+    private void fileContextMenu(Pane p, File file) {
+        final boolean archive = ArchiveExtractor.supported(file);
+        final ArrayList<String> actions = new ArrayList<>();
+        if (file.isDirectory()) actions.add("进入文件夹");
+        actions.add("复制到另一栏");
+        if (archive) actions.add("解压到当前目录");
+        if (file.isFile()) actions.add("文本编辑");
+        actions.add("重命名");
+        actions.add("删除（永久删除）");
+        new AlertDialog.Builder(this)
+            .setTitle(file.getName())
+            .setItems(actions.toArray(new String[0]), (d, index) -> {
+                String action = actions.get(index);
+                active = p;
+                p.selected = file;
+                switch (action) {
+                    case "进入文件夹": navigate(p, file); break;
+                    case "复制到另一栏": copySelected(); break;
+                    case "解压到当前目录": extractArchive(file); break;
+                    case "文本编辑": editSelected(); break;
+                    case "重命名": renameSelected(); break;
+                    case "删除（永久删除）": confirmDelete(p, file); break;
+                    default: break;
+                }
+            })
+            .setNegativeButton("取消", null).show();
+    }
+
+    private void confirmDelete(Pane pane, File selectedFile) {
+        if (selectedFile.equals(root) || !insideRoot(selectedFile)) {
+            say("无法删除共享存储根目录或无权限路径");
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("确认永久删除")
+            .setMessage("确定永久删除「" + selectedFile.getName() + "」？\n\n"
+                + "若是文件夹，会连同其中所有内容一起删除。"
+                + " 此操作不会进入回收站，无法撤销，请先备份重要文件。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("永久删除", (d,w) -> {
+                io.execute(() -> {
+                    try {
+                        deleteRecursively(selectedFile, 0, new int[]{0});
+                        runOnUiThread(() -> {
+                            refresh(pane);
+                            selectPane(pane);
+                            say("已删除："+selectedFile.getName());
+                        });
+                    } catch (Exception e) { runOnUiThread(() -> fail(e)); }
+                });
+            }).show();
+    }
+
+    private void deleteRecursively(File file, int depth, int[] count) throws Exception {
+        if (depth > 30 || ++count[0] > 10000)
+            throw new IOException("安全限制：删除的文件过多或层级过深");
+        if (file.equals(root) || !insideRoot(file))
+            throw new IOException("拒绝删除共享存储之外的路径");
+        if (java.nio.file.Files.isSymbolicLink(file.toPath())) {
+            // Remove link itself; never follow it.
+            if (!file.delete()) throw new IOException("删除失败：" + file.getName());
+            return;
+        }
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children == null) throw new IOException("无法读取文件夹：" + file.getName());
+            for (File child : children) deleteRecursively(child, depth+1, count);
+        }
+        if (!file.delete()) throw new IOException("删除失败：" + file.getName());
+    }
+
+    private void extractArchive(File archive) {
+        if (!ArchiveExtractor.supported(archive)) {
+            say("不支持该压缩格式");
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("解压文件")
+            .setMessage("解压「" + archive.getName() + "」到同一目录下的新文件夹？\n"
+                + "需要足够剩余空间；分卷请放在同一目录并选第一卷。"
+                + "\n\n陌生压缩包可能包含异常内容，建议先在测试目录使用。")
+            .setNegativeButton("取消",null)
+            .setPositiveButton("开始解压",(d,w) -> {
+                say("正在解压，请勿重复操作……");
+                io.execute(() -> {
+                    try {
+                        File extracted = ArchiveExtractor.extract(archive, archive.getParentFile(), getCacheDir());
+                        runOnUiThread(() -> {
+                            refreshBoth();
+                            say("解压完成：" + extracted.getName());
+                        });
+                    } catch (Exception ex) {
+                        runOnUiThread(() -> fail(ex));
+                    }
+                });
+            }).show();
+    }
+
+    private void archiveInfo() {
+        new AlertDialog.Builder(this).setTitle("CFM v0.3 · 解压工具箱")
+            .setMessage("支持：ZIP、JAR、APK、XAPK、APKS、APKM、7z、RAR、"
+                + "TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、TAR.LZMA、"
+                + "GZ、BZ2、XZ、LZMA、LZ4、Unix Z、AR、DEB、CPIO、ARJ、DUMP。\n\n"
+                + "分卷：ZIP 的 .z01+.zip；7z.001/ZIP.001 顺序拼接；"
+                + "RAR 常见分卷（依赖 Junrar）。需要所有分卷放在同一目录。\n\n"
+                + "不保证每种加密算法和稀有子格式都能解压；"
+                + "CAB、ISO、WIM、DMG、ACE 等暂未支持。\n"
+                + "常见格式限制：单文件 512MB，总量 1GB，最多 4000 项；"
+                + "RAR 由独立解码库处理，不适用同一套配额。")
+            .setPositiveButton("确定",null).show();
+    }
+
+    private void searchDialog() {
+        if (!canAccess()) { requestFilesPermission(); return; }
+        final Pane pane = active;
+        EditText field = new EditText(this);
+        field.setSingleLine(true);
+        field.setHint("输入文件或文件夹名称");
+        field.setPadding(dp(16), dp(9), dp(16), dp(9));
+        new AlertDialog.Builder(this).setTitle("搜索当前目录及子目录")
+            .setView(field)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("搜索", (d,w) -> {
+                String term=field.getText().toString().trim().toLowerCase(Locale.ROOT);
+                if(term.length()<2){say("请输入至少两个字符");return;}
+                say("正在搜索 " + pane.folder.getName() + "……");
+                io.execute(() -> {
+                    List<File> found = new ArrayList<>();
+                    ArrayDeque<File> pending = new ArrayDeque<>();
+                    pending.add(pane.folder);
+                    int scanned=0;
+                    while(!pending.isEmpty() && scanned<35000 && found.size()<120){
+                        File folder=pending.removeFirst();
+                        if(!insideRoot(folder))continue;
+                        File[] entries=folder.listFiles();
+                        if(entries==null)continue;
+                        for(File item:entries) {
+                            if(++scanned>=35000 || found.size()>=120)break;
+                            if(item.getName().toLowerCase(Locale.ROOT).contains(term))found.add(item);
+                            if(item.isDirectory() && !java.nio.file.Files.isSymbolicLink(item.toPath())
+                                && insideRoot(item))pending.addLast(item);
+                        }
+                    }
+                    final int checked=scanned;
+                    runOnUiThread(() -> showSearchResults(pane, term, found, checked));
+                });
+            }).show();
+    }
+
+    private void showSearchResults(Pane pane, String query, List<File> files, int checked) {
+        if (files.isEmpty()) { say("没有找到：" + query); return; }
+        String[] names = new String[files.size()];
+        for (int i=0;i<files.size();i++) {
+            File f=files.get(i);
+            names[i]=(f.isDirectory()?"📁 ":"📄 ")+f.getName()+"\n"+f.getParent();
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("搜索“"+query+"” · "+files.size()+" 项（扫描 "+checked+"）")
+            .setItems(names, (d,w) -> {
+                File selected=files.get(w);
+                if(selected.isDirectory()) navigate(pane, selected);
+                else {
+                    navigate(pane,selected.getParentFile());
+                    pane.selected=selected;
+                    say("已定位：" + selected.getName() + "；长按文件可操作");
+                }
+            })
+            .setNegativeButton("关闭",null).show();
+    }
+
     private void say(String message){
         android.widget.Toast.makeText(this,message,android.widget.Toast.LENGTH_LONG).show();
     }
