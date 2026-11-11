@@ -1,7 +1,7 @@
-name: CFM PC V0.1 - Build Windows EXE
+name: CFM PC V0.2 - Build Windows EXE
 on:
   push:
-    branches: [cfm-pc-web-v0.1]
+    branches: [cfm-pc-web-v0.2]
     paths:
       - "Cheems-File-Manager-PC/**"
       - ".github/workflows/cfm-pc-build.yml"
@@ -26,7 +26,7 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFileManager-PC-V0.1-win-x64
+          name: CheemsFileManager-PC-V0.2-win-x64
           path: ./cfm-pc-output/**
           if-no-files-found: error
           retention-days: 30
