@@ -34,6 +34,10 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -69,6 +73,10 @@ final class PcNativeFileApi {
             case "recycle": return recycle(paths(args));
             case "extract": return extract(context,required(args,"path"),required(args,"target"));
             case "zip": return zip(paths(args),required(args,"target"));
+            case "newHtml": return newHtml(required(args,"path"),required(args,"name"));
+            case "shell": return terminal(required(args,"cwd"),required(args,"command"));
+            case "terminalWindow": return new JSONObject()
+                .put("message","Android 预览没有 Windows CMD 外部窗口，请使用内置终端");
             default: throw new IOException("未实现的操作："+action);
         }
     }
@@ -110,6 +118,67 @@ final class PcNativeFileApi {
         intent.setClipData(clip);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         return intent;
+    }
+
+
+    private static JSONObject newHtml(String folderPath,String rawName)throws Exception {
+        File folder=inside(folderPath);
+        if(!folder.isDirectory())throw new IOException("目标目录不存在");
+        String name=cleanName(rawName);
+        if(!name.toLowerCase(Locale.ROOT).endsWith(".html") &&
+           !name.toLowerCase(Locale.ROOT).endsWith(".htm"))
+            throw new IOException("HTML 文件须以 .html 或 .htm 结尾");
+        File target=inside(new File(folder,name).getPath());
+        if(target.exists())throw new IOException("文件名已存在");
+        String template="<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n"+
+            "<meta charset=\"utf-8\">\n"+
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"+
+            "<title>Cheems HTML</title>\n</head>\n<body>\n"+
+            "  <h1>Hello, HTML!</h1>\n</body>\n</html>\n";
+        try(OutputStream out=new FileOutputStream(target)) {
+            out.write(template.getBytes(StandardCharsets.UTF_8));
+        }
+        return new JSONObject().put("path",target.getAbsolutePath());
+    }
+
+    private static JSONObject terminal(String path,String command)throws Exception {
+        File directory=inside(path);
+        if(!directory.isDirectory())throw new IOException("终端目录不存在");
+        if(command.length()>1200)throw new IOException("单条命令最多 1200 个字符");
+        if(command.trim().isEmpty())
+            return new JSONObject().put("output","").put("cwd",directory.getPath())
+                .put("exitCode",0);
+        // Runs only with the app's own unprivileged Linux UID.
+        // No Shizuku, ROOT, network permission, or elevated shell.
+        ProcessBuilder builder=new ProcessBuilder("/system/bin/sh","-c",command);
+        builder.directory(directory);
+        builder.redirectErrorStream(true);
+        Process proc=builder.start();
+        ExecutorService reader=Executors.newSingleThreadExecutor();
+        try {
+            Future<String> output=reader.submit(()->{
+                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                try(InputStream in=proc.getInputStream()) {
+                    byte[] buffer=new byte[4096];int n;
+                    while((n=in.read(buffer))!=-1){
+                        if(bytes.size()<25000)
+                            bytes.write(buffer,0,Math.min(n,25000-bytes.size()));
+                    }
+                }
+                return bytes.toString("UTF-8");
+            });
+            if(!proc.waitFor(8,TimeUnit.SECONDS)){
+                proc.destroyForcibly();
+                throw new IOException("命令超过 8 秒，已尝试终止");
+            }
+            String result=output.get(2,TimeUnit.SECONDS);
+            return new JSONObject().put("output",result)
+                .put("cwd",directory.getAbsolutePath())
+                .put("exitCode",proc.exitValue());
+        } finally {
+            reader.shutdownNow();
+            proc.destroy();
+        }
     }
 
     private static void requireAccess() throws IOException {
