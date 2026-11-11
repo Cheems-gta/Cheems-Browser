@@ -599,6 +599,9 @@ async function openItem(item) {
   if(isAndroidBuild() && /\.apk$/i.test(item.name))
     return guarded(()=>call("openWith",{path:item.path}));
   if(isArchive(item.name)) {
+    // Android can hand a supported archive to another installed viewer.
+    // The long-press menu still offers CFM's built-in extraction.
+    if(isAndroidBuild())return guarded(()=>call("openWith",{path:item.path}));
     toast("已选中压缩包，使用顶部「解压」或右键菜单提取");
     return;
   }
@@ -609,7 +612,21 @@ async function openItem(item) {
 }
 async function openEditor(path) {
   await guarded(async()=>{
-    const data=await call("read",{path});
+    let data;
+    try {
+      data=await call("read",{path});
+    } catch (error) {
+      // The editor supports only small UTF-8 text files; a .txt extension
+      // does not guarantee UTF-8. Offer a different viewer instead.
+      if(isAndroidBuild() && /UTF-8|编码|2MB|文件过大|纯文本|无法读取/i.test(error.message||"")) {
+        if(confirm("CFM 内置编辑器无法读取该文件：\n"+error.message+
+          "\n\n是否用其他应用打开？")){
+          await call("openWith",{path});
+        }
+        return;
+      }
+      throw error;
+    }
     currentEditor=data;
     $("#editor-file").textContent=data.path;
     $("#editor-text").value=data.text;
