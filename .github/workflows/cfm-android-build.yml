@@ -1,9 +1,10 @@
-name: CFM PC UI Android Preview v0.6 - Build APK
+name: CFM Android V0.7 - QA + APK
 on:
   push:
-    branches: [cfm-pc-android-preview-v0.6]
+    branches: [cfm-pc-android-preview-v0.7]
     paths:
       - "Cheems-File-Manager-Android/**"
+      - "CFM-QA/**"
       - ".github/workflows/cfm-android-build.yml"
   workflow_dispatch:
 
@@ -11,11 +12,19 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install UI test dependency
+        run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0
+      - name: Test Android HTML+JS interactions in simulated browser
+        run: node CFM-QA/ui-smoke.cjs android
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -31,12 +40,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Build full PC UI Android preview APK
+      - name: Assemble APK after UI tests
         run: gradle -p Cheems-File-Manager-Android :app:assembleDebug --stacktrace
-      - name: Publish APK
+      - name: Upload verified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFM-PC-UI-Android-Preview-V0.6-APK
+          name: CheemsFM-PC-UI-Android-Preview-V0.7-QA-APK
           path: Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
