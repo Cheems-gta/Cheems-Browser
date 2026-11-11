@@ -596,6 +596,10 @@ function closeEditor() {
 }
 async function openItem(item) {
   if(item.isDir) return guarded(()=>navigate(state.active,item.path));
+  // Some game/app data has no Android ACTION_VIEW handler.
+  // For binary files, opening the contents should still work without a viewer.
+  if(isAndroidBuild() && /\.(?:db|sqlite|sqlite3|dat|bin|obb|pak|so|dex|class|blob)$/i.test(item.name))
+    return openHexPreview(item.path);
   if(isAndroidBuild() && /\.apk$/i.test(item.name))
     return guarded(()=>call("openWith",{path:item.path}));
   if(isArchive(item.name)) {
@@ -610,6 +614,22 @@ async function openItem(item) {
   }
   return openEditor(item.path);
 }
+async function openHexPreview(path) {
+  await guarded(async()=>{
+    const data=await call("previewHex",{path});
+    currentEditor=data;
+    $("#editor-file").textContent=data.path;
+    $("#editor-text").value=data.text;
+    $("#editor-text").readOnly=true;
+    $("#save-editor").disabled=true;
+    $("#editor-mode").textContent="HEX / ASCII · 前 8 KiB · 只读" + (data.truncated?" · 已截断":"");
+    $("#editor-overlay").classList.remove("hidden");
+    $("#preview-button").classList.add("hidden");
+    state.previewVisible=false;
+    $("#preview-pane").classList.add("hidden");
+    $("#editor-text").focus();
+  });
+}
 async function openEditor(path) {
   await guarded(async()=>{
     let data;
@@ -619,9 +639,9 @@ async function openEditor(path) {
       // The editor supports only small UTF-8 text files; a .txt extension
       // does not guarantee UTF-8. Offer a different viewer instead.
       if(isAndroidBuild() && /UTF-8|编码|2MB|文件过大|纯文本|无法读取/i.test(error.message||"")) {
-        if(confirm("CFM 内置编辑器无法读取该文件：\n"+error.message+
-          "\n\n是否用其他应用打开？")){
-          await call("openWith",{path});
+        if(confirm("CFM 文本编辑器无法读取：\n"+error.message+
+          "\n\n是否改用十六进制只读预览？")){
+          await openHexPreview(path);
         }
         return;
       }
@@ -946,6 +966,10 @@ function contextMenu(x,y,item) {
   }
   if(!trashed && !item.isDir && /\.html?$/i.test(item.name)){
     actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
+  }
+  if(!trashed && !item.isDir && isAndroidBuild()) {
+    actions.push(["🔎 十六进制预览（只读）",()=>openHexPreview(item.path)]);
+    actions.push(["📂 使用其他应用打开",()=>guarded(()=>call("openWith",{path:item.path}))]);
   }
   if(!trashed) actions.push(["分享给微信 / QQ",shareSelected]);
 
