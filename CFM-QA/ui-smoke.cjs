@@ -23,7 +23,8 @@ const fixture={
   ],
   [downloads]:[
     {name:"sample.zip",isDir:false,path:downloads+"/sample.zip",size:532},
-    {name:"sample.html",isDir:false,path:downloads+"/sample.html",size:250}
+    {name:"sample.html",isDir:false,path:downloads+"/sample.html",size:250},
+    {name:"sample.apk",isDir:false,path:downloads+"/sample.apk",size:30000}
   ],
   [trash]:[{name:"deleted.txt",isDir:false,path:trash+"/deleted.txt",size:7}]
 };
@@ -63,6 +64,9 @@ function mockAction(action,args){
     items:(fixture[args.path]||[]).map(item=>({
       ...item,modified:"2026-11-11 11:11",isLink:false
     })),truncated:false};
+  case "icons":return {icons:Object.fromEntries((args.paths||[])
+    .filter(p=>p.endsWith(".apk"))
+    .map(p=>[p,"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Yf7fXsAAAAASUVORK5CYII="]))};
   case "search":return {results:[{
     name:"sample.zip",path:downloads+"/sample.zip",isDir:false
   }],scanned:12,truncated:false};
@@ -136,6 +140,33 @@ async function test(label,fn){
     assert.match(w.document.querySelector("#search-summary").textContent,/找到 1 项/);
     w.document.querySelector(".search-result").click();
     await waitFor(()=>w.document.querySelector("#search-overlay").classList.contains("hidden"));
+  });
+
+  await test("search locates exact file and temporarily highlights its name green",async()=>{
+    await setPath(0,home);
+    w.document.querySelector("#search").click();
+    w.document.querySelector("#search-query").value="sample";
+    w.document.querySelector("#search-submit").click();
+    await waitFor(()=>w.document.querySelectorAll(".search-result").length===1);
+    w.document.querySelector(".search-result").click();
+    await waitFor(()=>w.document.querySelector("#path0").value===downloads);
+    await waitFor(()=>!!w.document.querySelector("#entries0 .entry.search-hit"));
+    const target=[...w.document.querySelectorAll("#entries0 .entry")]
+      .find(x=>x.dataset.path===downloads+"/sample.zip");
+    assert.ok(target);
+    assert.ok(target.classList.contains("search-hit"));
+    await new Promise(r=>setTimeout(r,2750));
+    assert.equal(target.classList.contains("search-hit"),false);
+  });
+  await test("APK entries obtain image data from native bridge and display it",async()=>{
+    await setPath(0,downloads);
+    await waitFor(()=>requests.some(x=>x.action==="icons" &&
+      x.args.paths.some(p=>p.endsWith("sample.apk"))));
+    await waitFor(()=>!!w.document.querySelector(
+      '#entries0 .entry[data-path$="sample.apk"] img.native-file-icon'));
+    const icon=w.document.querySelector(
+      '#entries0 .entry[data-path$="sample.apk"] img.native-file-icon');
+    assert.ok(icon.src.startsWith("data:image/png;base64,"));
   });
   await test("Open Trash works without selecting a file",async()=>{
     const before=requests.filter(x=>x.action==="recycle").length;
