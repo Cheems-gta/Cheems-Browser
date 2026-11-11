@@ -10,8 +10,8 @@ android {
         minSdk 30
         targetSdk 35
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        versionCode 12
-        versionName '1.2.0-IconsFix'
+        versionCode 13
+        versionName '1.3.0-DataOpenFix'
     }
     buildFeatures {
         aidl true
