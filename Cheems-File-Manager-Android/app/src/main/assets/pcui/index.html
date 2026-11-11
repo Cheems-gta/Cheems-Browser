@@ -34,6 +34,8 @@
       <button id="share" title="通过系统支持的应用分享所选文件">↗ 分享</button>
       <span class="divider"></span>
       <button id="edit" title="打开文本/HTML 源码编辑">〈/〉 编辑</button>
+      <button id="html-button" title="编辑并安全预览选中的 HTML 文件">🌐 HTML 预览</button>
+      <button id="terminal-button" title="在当前文件夹打开终端">⌘ 终端</button>
       <button id="extract" title="ZIP、7z、RAR、TAR 等解压到另一栏">⇣ 解压</button>
       <button id="zip" title="在另一栏生成 ZIP">▣ 创建 ZIP</button>
     </div>
@@ -96,6 +98,26 @@
       <div class="dialog-title"><strong>搜索结果</strong><button id="close-search">×</button></div>
       <div id="search-summary" class="search-summary"></div>
       <div id="search-results" class="search-results"></div>
+    </section>
+  </div>
+  <div class="overlay hidden" id="terminal-overlay">
+    <section class="dialog terminal-dialog">
+      <div class="dialog-title">
+        <div><strong>⌘ 终端 · 当前文件夹</strong><span id="terminal-path"></span></div>
+        <button id="close-terminal" title="关闭">×</button>
+      </div>
+      <div class="terminal-controls">
+        <span>当前账户权限 · 不是管理员/ROOT</span>
+        <div class="spacer"></div>
+        <button id="external-terminal">在系统 CMD 中打开</button>
+      </div>
+      <pre id="terminal-output">准备就绪</pre>
+      <div class="terminal-entry">
+        <label for="terminal-input">&gt;</label>
+        <input type="text" id="terminal-input" autocomplete="off" spellcheck="false" placeholder="输入命令并按 Enter">
+        <button id="run-terminal" class="primary">执行</button>
+      </div>
+      <p class="editor-note">命令由当前用户主动输入；可能修改文件，请勿执行来源不明的命令。每条命令最多运行 8 秒。</p>
     </section>
   </div>
   <div id="toast" class="toast hidden"></div>
