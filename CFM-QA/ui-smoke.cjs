@@ -83,7 +83,9 @@ function mockAction(action,args){
   case "rename":return {path:args.path};
   case "extract":return {folder:home+"/out",files:1};
   case "zip":return {path:home+"/test.zip"};
-  case "read":return {path:args.path,text:"text",name:"sample.html",bom:false,html:true};
+  case "read":
+    if(args.path.endsWith("legacy.txt"))throw Error("不是 UTF-8 编码，暂不支持自动转码");
+    return {path:args.path,text:"text",name:"sample.html",bom:false,html:true};
   case "save":return {path:args.path};
   case "shell":return {output:"QA",exitCode:0,cwd:args.cwd};
   default:throw Error("Unknown mocked action: "+action);
@@ -256,6 +258,23 @@ async function test(label,fn){
       row.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
       await waitFor(()=>requests.slice(before).some(x=>x.action==="openWith"&&x.args.path===filePath));
     }
+  });
+  await test("Android non-text file opens via system viewer",async()=>{
+    const before=requests.filter(x=>x.action==="openWith").length;
+    await w.openItem({path:downloads+"/photo.jpg",name:"photo.jpg",isDir:false});
+    await waitFor(()=>requests.filter(x=>x.action==="openWith").length===before+1);
+  });
+  await test("Android non-UTF8 text falls back to external viewer",async()=>{
+    const oldReads=requests.filter(x=>x.action==="read").length;
+    const oldOpen=requests.filter(x=>x.action==="openWith").length;
+    await w.openItem({path:downloads+"/legacy.txt",name:"legacy.txt",isDir:false});
+    await waitFor(()=>requests.filter(x=>x.action==="read").length===oldReads+1);
+    await waitFor(()=>requests.filter(x=>x.action==="openWith").length===oldOpen+1);
+  });
+  await test("Android archive file opens through installed file viewer",async()=>{
+    const oldOpen=requests.filter(x=>x.action==="openWith").length;
+    await w.openItem({path:downloads+"/sample.zip",name:"sample.zip",isDir:false});
+    await waitFor(()=>requests.filter(x=>x.action==="openWith").length===oldOpen+1);
   });
   await test("HTML and archive buttons exist",async()=>{
     assert.ok(w.document.querySelector("#html-button"));
