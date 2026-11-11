@@ -22,7 +22,7 @@ GitHub branch `cfm-pc-android-preview-v0.1`, Actions workflow `.github/workflows
 
 - 已安装应用对应的 `Android/data/<package>`、`Android/obb/<package>`、`Android/media/<package>` 子目录：如果系统允许列出该目录且包名可见，尝试用 PackageManager 读取该应用的实际图标。
 - `.apk` 文件：尝试从 APK 自身 AndroidManifest.xml 引用的资源加载应用图标，不安装 APK。加载不到会保留 CFM 默认图标。
-- `.exe` 文件在此 Android APK 预览版中仍使用普通文件图标；真正 Windows 原生 EXE 图标由 PC 版显示。
+- `.exe` / `.dll` 文件：尝试只读解析文件内的 Windows PE `RT_GROUP_ICON` / `RT_ICON` 资源（PNG 和常见 DIB 图标），不执行文件。部分打包程序、加密或非常见图标格式会回退普通图标；Windows PC 版则直接调用系统 Shell 获取原图标。
 - 原图标使用可视区域惰性加载、每批至多 12 项和本地缓存，避免文件夹有数千项时阻塞列表。无网络访问。
 - 点击搜索结果：跳转到文件所在目录、滚动到目标、文件名绿色提示约 2.6 秒，然后回到正常文字颜色。
 - 注意：上述图标功能不会绕过 Android 13+ 对 `Android/data` 的目录访问限制。APP 读取已安装软件的图标元数据需要 `QUERY_ALL_PACKAGES` 可见性权限，此版本为用户自主安装测试版；提交应用商店前需审查相关政策和权限最小化。
