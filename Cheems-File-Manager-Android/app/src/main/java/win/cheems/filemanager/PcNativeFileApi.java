@@ -25,6 +25,10 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.FileVisitResult;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -74,6 +78,7 @@ final class PcNativeFileApi {
             case "recycle": return recycle(paths(args));
             case "openTrash": return trashLocation();
             case "restore": return restoreTrash(paths(args));
+            case "permanentDelete": return permanentlyDeleteTrash(paths(args));
             case "extract": return extract(context,required(args,"path"),required(args,"target"));
             case "zip": return zip(paths(args),required(args,"target"));
             case "newHtml": return newHtml(required(args,"path"),required(args,"name"));
@@ -517,6 +522,59 @@ final class PcNativeFileApi {
             count++;
         }
         return new JSONObject().put("count",count).put("message","已移入 CFM 本地回收站");
+    }
+
+
+    /**
+     * Permanent deletion is restricted to direct children of CFM's own trash.
+     * No arbitrary path, storage root, index file, or item outside the trash
+     * can be removed through this action. The UI always requires confirmation.
+     */
+    private static JSONObject permanentlyDeleteTrash(JSONArray paths) throws Exception {
+        File trash=trashDir().getCanonicalFile();
+        JSONObject meta=readTrashIndex(trash);
+        if (paths.length()>30)
+            throw new IOException("一次最多永久删除 30 项");
+        int removed=0;
+        for (int i=0;i<paths.length();i++) {
+            File requested=new File(paths.getString(i)).getAbsoluteFile();
+            File folder=requested.getParentFile();
+            if (folder==null || !folder.getCanonicalFile().equals(trash))
+                throw new IOException("安全限制：永久删除仅允许 CFM 回收站顶层项目");
+            String name=requested.getName();
+            if(name.equals(".") || name.equals("..") ||
+               name.startsWith(".cfm_index.json") ||
+               name.equals(".CFM_RecycleBin"))
+                throw new IOException("拒绝删除回收站管理文件");
+            File item=safeFile(requested.getPath());
+            if(!item.exists())
+                throw new IOException("回收站项目不存在："+name);
+            // java.nio.file.walkFileTree does NOT follow symbolic links
+            // unless FOLLOW_LINKS is explicitly enabled.
+            final int[] deletedItems={0};
+            Files.walkFileTree(item.toPath(),new SimpleFileVisitor<Path>() {
+                @Override public FileVisitResult visitFile(Path file,BasicFileAttributes attrs)
+                    throws IOException {
+                    if(++deletedItems[0]>40000)
+                        throw new IOException("删除项目过多，已停止以保护设备");
+                    Files.delete(file);
+                    return FileVisitResult.CONTINUE;
+                }
+                @Override public FileVisitResult postVisitDirectory(Path dir,IOException error)
+                    throws IOException {
+                    if(error!=null)throw error;
+                    if(++deletedItems[0]>40000)
+                        throw new IOException("删除目录过多，已停止以保护设备");
+                    Files.delete(dir);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            meta.remove(name);
+            writeTrashIndex(trash,meta);
+            removed++;
+        }
+        return new JSONObject().put("count",removed)
+            .put("message","已永久删除 "+removed+" 项（无法通过 CFM 回收站恢复）");
     }
 
     private static JSONObject restoreTrash(JSONArray paths)throws Exception {
