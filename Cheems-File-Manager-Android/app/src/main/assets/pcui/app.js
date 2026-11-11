@@ -416,18 +416,40 @@ function togglePreview() {
   if(state.previewVisible)updatePreview();
 }
 
-async function search() {
-  const query=prompt("在当前栏文件夹及子文件夹中搜索文件名（至少 2 字）：","");
-  if(!query) return;
-  await guarded(async()=>{
-    const result=await call("search",{path:activePane().path,query});
-    const index=state.active;
-    $("#search-overlay").classList.remove("hidden");
+// Touch-friendly search: use an in-app dialog instead of JavaScript prompt(),
+// because Android WebView does not necessarily surface JS prompt dialogs.
+let searchPaneIndex = 0;
+function search() {
+  searchPaneIndex=state.active;
+  const pane=state.panes[searchPaneIndex];
+  if (!pane.path) {toast("当前目录尚未打开");return;}
+  $("#search-overlay").classList.remove("hidden");
+  $("#search-summary").textContent="将在「"+pane.path+"」及子文件夹中查找文件名";
+  $("#search-results").replaceChildren();
+  $("#search-query").value="";
+  $("#search-query").focus();
+}
+async function executeSearch() {
+  const query=$("#search-query").value.trim();
+  if(query.length<2) {
+    $("#search-summary").textContent="请输入至少两个字符再搜索。";
+    $("#search-query").focus();
+    return;
+  }
+  const index=searchPaneIndex;
+  const folder=state.panes[index].path;
+  const button=$("#search-submit");
+  if(button.disabled)return;
+  button.disabled=true;
+  button.textContent="搜索中…";
+  $("#search-summary").textContent="正在搜索「"+query+"」…";
+  $("#search-results").replaceChildren();
+  try {
+    const result=await call("search",{path:folder,query});
     $("#search-summary").textContent=
       "搜索「"+query+"」· 找到 "+result.results.length+" 项 · 已扫描 "+result.scanned+" 项"+
       (result.truncated?"（已达到搜索上限）":"");
     const list=$("#search-results");
-    list.replaceChildren();
     for(const file of result.results) {
       const row=document.createElement("button");
       row.className="search-result";
@@ -447,6 +469,7 @@ async function search() {
             state.panes[index].selected.add(file.path);
             showSelection(index);
           }
+          toast("已定位："+file.name);
         }catch(error){toast(error.message,true)}
       });
       list.append(row);
@@ -454,10 +477,16 @@ async function search() {
     if(!result.results.length) {
       const empty=document.createElement("p");
       empty.className="empty";
-      empty.textContent="没有找到匹配项";
+      empty.textContent="没有找到匹配项；可以尝试缩短搜索词。";
       list.append(empty);
     }
-  });
+  }catch(error){
+    $("#search-summary").textContent="搜索失败："+error.message;
+    toast(error.message,true);
+  }finally{
+    button.disabled=false;
+    button.textContent="搜索";
+  }
 }
 
 
@@ -705,6 +734,8 @@ function wire() {
   const bookmarkButton=$("#bookmarks");
   if(bookmarkButton) bookmarkButton.addEventListener("click",showBookmarks);
   $("#search").addEventListener("click",search);
+  $("#search-submit").addEventListener("click",executeSearch);
+  $("#search-query").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();executeSearch();}});
   $("#up").addEventListener("click",()=>up());
   $("#copy").addEventListener("click",()=>transfer(false));
   $("#move").addEventListener("click",()=>transfer(true));
