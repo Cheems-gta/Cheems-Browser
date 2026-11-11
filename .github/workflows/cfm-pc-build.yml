@@ -1,7 +1,7 @@
-name: CFM PC V0.6 - QA + Windows EXE
+name: CFM PC V0.7 - Custom icon + QA + Windows EXE
 on:
   push:
-    branches: [cfm-pc-web-v0.6]
+    branches: [cfm-pc-web-v0.7]
     paths:
       - "Cheems-File-Manager-PC/**"
       - "CFM-QA/**"
@@ -29,6 +29,12 @@ jobs:
         run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0
       - name: Test real PC HTML+JS interactions in simulated browser
         run: node CFM-QA/ui-smoke.cjs pc
+      - name: Generate Cheems Windows icon from approved artwork
+        shell: pwsh
+        run: |
+          python -m pip install --quiet Pillow
+          python -c "from PIL import Image; im=Image.open('Cheems-File-Manager-PC/branding/cfm_icon.webp').convert('RGBA'); im.save('Cheems-File-Manager-PC/branding/cfm_icon.ico', format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+          if (!(Test-Path "Cheems-File-Manager-PC/branding/cfm_icon.ico")) { throw "Icon generation failed" }
       - name: Windows filesystem integration tests
         run: dotnet run --project ./CFM-QA/CFM.QA.csproj -c Release
       - name: Publish standalone Windows x64 EXE
@@ -37,7 +43,7 @@ jobs:
       - name: Upload verified build
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFileManager-PC-V0.6-QA-win-x64
+          name: CheemsFileManager-PC-V0.7-Icon-win-x64
           path: ./cfm-pc-output/**
           if-no-files-found: error
           retention-days: 30
