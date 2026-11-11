@@ -1,36 +1,24 @@
-# Cheems File Manager — Android V0.1
+# Cheems File Manager Android V0.2
+Android 11+ file manager, with an MT-inspired dark dual-pane list and full path navigation.
 
-Android native trial version of CFM, written in Java, built with Android SDK.
+## New in 0.2
+- Shows files immediately at `/storage/emulated/0/` after one-time Android system "Manage all files" authorization.
+- Stores file paths across app restarts (and permission normally stays granted until revoked).
+- Top full current path (tap to enter a path); each pane has an independent current directory.
+- Portrait/landscape dual side-by-side pane, folder + file names and modified time, storage usage.
+- Tap folder to navigate; tap file to select; long-press folder to select it.
+- Copy selection to the other pane, create folder, rename, edit common UTF-8 text files (<=256 KB).
+- Non-root, offline, no ads, no INTERNET permission.
+- File copy runs in background on a single worker. Failed copies may leave incomplete targets.
+- Delete intentionally not included to limit accidental loss in initial testing.
 
-This is a separate project from the Windows WPF EXE. WPF EXE cannot simply be converted to an APK.
+## Permissions
+Uses the standard Android MANAGE_EXTERNAL_STORAGE special access panel. Open, tap authorization button, enable it once and return. Access is then remembered by Android. This does NOT grant access to Android/data or other protected app private directories.
+Shizuku is not required or integrated in v0.2. Optional Shizuku support may follow, but Shizuku authorization is not equivalent to granting broad private app data access and may require a running Shizuku service.
 
-## What works (experimental)
-- Dual-pane folder browser: portrait = top/bottom, landscape = left/right
-- Android Storage Access Framework directory picker, persistent read/write permissions
-- Navigate into folder and back to chosen root
-- Select a file (tap) or folder (long-press), copy selection to other pane
-- Create a folder, rename a file/folder
-- Edit common UTF-8 text files up to 256 KB
-- Offline, no ads, no account, no INTERNET permission, no ROOT required
+## Install note
+GitHub Actions builds a **debug-signed** APK; this is an experimental build.
+Debug APK signature may differ from 0.1's build because CI creates fresh signing keys; if the phone says 'app not installed', uninstall the old test app before installing v0.2. Export test files first; uninstall clears app preferences. Never disable system security protections to install.
 
-## Limitations and safety
-- For safety, V0.1 intentionally omits delete and move.
-- User must explicitly choose authorized folders in Android picker; Android blocks some directories (e.g. other apps' private data, Android/data). This app does not bypass system protections.
-- The UI lists up to 300 items/folder for initial tests.
-- Recursive copy only supports up to 30 folder levels. Large copies may freeze UI; interrupted copies can leave partial files.
-- No support for ZIP, APK analysis, DEX editing, hex editing, or root file access yet.
-- App is unsigned for distribution; debug APK is signed using standard Android debug key. Never override device security warnings to install unknown files; use test devices/folders and verify source.
-- Compilation on GitHub does **not** equal device-tested features.
-
-## Build APK
-Check `.github/workflows/cfm-android-build.yml` on the `cfm-android-v0.1` branch. When the push build succeeds, GitHub Actions → run → Artifacts → `CheemsFM-Android-V0.1-debug-apk`.
-To compile locally:
-
-```sh
-gradle -p Cheems-File-Manager-Android :app:assembleDebug
-```
-
-Output: `Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk`
-
-## Repo layout
-This app is temporarily isolated on the `cfm-android-v0.1` branch in the existing Cheems-Browser repository; it does not change `main` or the Windows CFM branch.
+## CI build
+GitHub branch `cfm-android-v0.2`, workflow `.github/workflows/cfm-android-build.yml`. Download the artifact `CheemsFM-Android-V0.2-debug-apk` after a successful run.
