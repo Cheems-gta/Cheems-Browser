@@ -160,6 +160,7 @@ public final class PcPreviewActivity extends Activity {
                 switch(name) {
                     case "index.html": mime="text/html";break;
                     case "style.css": mime="text/css";break;
+                    case "icon.webp": mime="image/webp";break;
                     case "app.js": case "android-bridge.js": mime="application/javascript";break;
                     default: return new WebResourceResponse("text/plain","utf-8",
                         new java.io.ByteArrayInputStream(new byte[0]));
