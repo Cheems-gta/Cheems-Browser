@@ -83,7 +83,10 @@ function mockAction(action,args){
   case "rename":return {path:args.path};
   case "extract":return {folder:home+"/out",files:1};
   case "zip":return {path:home+"/test.zip"};
-  case "read":return {path:args.path,text:"text",name:"sample.html",bom:false,html:true};
+  case "read":
+    if(args.path.endsWith("legacy.txt"))
+      throw Error("不是 UTF-8 编码，暂不支持自动转码");
+    return {path:args.path,text:"text",name:"sample.html",bom:false,html:true};
   case "save":return {path:args.path};
   case "shell":return {output:"QA",exitCode:0,cwd:args.cwd};
   default:throw Error("Unknown mocked action: "+action);
@@ -182,6 +185,18 @@ async function test(label,fn){
     const icon=w.document.querySelector(
       '#entries0 .entry[data-path$="sample.apk"] img.native-file-icon');
     assert.ok(icon.src.startsWith("data:image/png;base64,"));
+  });
+  await test("archives offer Android system open-with instead of dead-end toast",async()=>{
+    if(mode!=="android")return;
+    const before=requests.filter(x=>x.action==="openWith").length;
+    await w.openItem({name:"sample.zip",path:downloads+"/sample.zip",isDir:false});
+    await waitFor(()=>requests.filter(x=>x.action==="openWith").length>before);
+  });
+  await test("non UTF-8 text falls back to an installed Android viewer",async()=>{
+    if(mode!=="android")return;
+    const before=requests.filter(x=>x.action==="openWith").length;
+    await w.openItem({name:"legacy.txt",path:downloads+"/legacy.txt",isDir:false});
+    await waitFor(()=>requests.filter(x=>x.action==="openWith").length>before);
   });
   await test("Open Trash works without selecting a file",async()=>{
     const before=requests.filter(x=>x.action==="recycle").length;
