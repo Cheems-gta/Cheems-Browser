@@ -1,7 +1,7 @@
-name: CFM PC V0.5 - QA + Windows EXE
+name: CFM PC V0.6 - QA + Windows EXE
 on:
   push:
-    branches: [cfm-pc-web-v0.5]
+    branches: [cfm-pc-web-v0.6]
     paths:
       - "Cheems-File-Manager-PC/**"
       - "CFM-QA/**"
@@ -37,7 +37,7 @@ jobs:
       - name: Upload verified build
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFileManager-PC-V0.5-QA-win-x64
+          name: CheemsFileManager-PC-V0.6-QA-win-x64
           path: ./cfm-pc-output/**
           if-no-files-found: error
           retention-days: 30
