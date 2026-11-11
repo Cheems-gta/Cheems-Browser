@@ -62,7 +62,8 @@ async function guarded(job) {
 const activePane = () => state.panes[state.active];
 function switchActive(n) {
   state.active=n;
-  $$(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
+  updateTrashButtons();
+  $(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
   return state.panes[n];
 }
 function formatBytes(bytes) {
@@ -97,6 +98,7 @@ async function navigate(index,path,historyPosition=null) {
   }
   $("#path"+index).value=data.path;
   render(index);
+  updateTrashButtons();
   return data;
 }
 async function refresh(index) {
@@ -127,13 +129,15 @@ async function historyStep(delta) {
   });
 }
 async function syncOtherPane() {
-  const index=state.active;
-  const current=state.panes[index].path;
-  if(!current){toast("请先打开文件夹");return;}
+  // Consistent with user's expectation: align the RIGHT pane to the LEFT,
+  // regardless of which pane was last selected. Do not move any files.
+  const originalActive=state.active;
+  const left=state.panes[0].path;
+  if(!left){toast("左栏尚未打开文件夹");return;}
   await guarded(async()=>{
-    await navigate(1-index,current);
-    switchActive(index);
-    toast("左右两栏已同步到："+current);
+    await navigate(1,left);
+    switchActive(originalActive);
+    toast("已同步：右栏 → "+left);
   });
 }
 async function createEmptyFile() {
@@ -421,6 +425,33 @@ async function restoreSelected() {
     if(!confirm("恢复选中的 "+paths.length+" 项？\n将尽量恢复到原目录；同名不会覆盖。"))return;
     const output=await mutate("restore",{paths},"已恢复回收站文件");
     if(output?.message)toast(output.message);
+  }catch(error){toast(error.message,true);}
+}
+function insideTrashTop(path) {
+  const trash=state.locations?.trash;
+  if(!trash || typeof path!=="string" || !path.startsWith(trash+"/"))return false;
+  const tail=path.slice(trash.length+1);
+  return tail.length>0 && !tail.includes("/") && !tail.includes("\\") &&
+         !tail.startsWith(".cfm_index.json");
+}
+function updateTrashButtons() {
+  const button=document.getElementById("permanent-trash");
+  if(button)button.classList.toggle("hidden",
+    !state.locations?.trash || activePane().path!==state.locations.trash);
+}
+async function permanentDeleteSelected() {
+  try {
+    const paths=selectedPaths();
+    if(!paths.every(insideTrashTop)){
+      toast("只能永久删除 CFM 回收站顶层的文件或文件夹",true);
+      return;
+    }
+    const names=paths.map(p=>p.slice(p.lastIndexOf("/")+1));
+    const shown=names.slice(0,4).join("\n")+(names.length>4?"\n……":"");
+    if(!confirm("永久删除以下 "+paths.length+" 项？\n\n"+shown+
+       "\n\n⚠ 此操作不会移入其他回收站，删除后无法通过 CFM 恢复。"))return;
+    const result=await mutate("permanentDelete",{paths},"永久删除完成");
+    if(result?.message)toast(result.message);
   }catch(error){toast(error.message,true);}
 }
 async function recycle() {
@@ -766,7 +797,13 @@ async function externalTerminal() {
 function contextMenu(x,y,item) {
   const menu=$("#context");
   menu.replaceChildren();
-  const actions=[
+  const trashed=insideTrashTop(item.path);
+  // Trash entries have dedicated actions; they are not recycled again.
+  const actions=trashed ? [
+    ["♻ 恢复到原目录",restoreSelected],
+    ["🗑 永久删除（无法恢复）",permanentDeleteSelected],
+    ["复制到另一栏",()=>transfer(false)]
+  ] : [
     ["打开 / 编辑",()=>openItem(item)],
     ["复制到另一栏",()=>transfer(false)],
     ["移动到另一栏",()=>transfer(true)],
@@ -774,19 +811,17 @@ function contextMenu(x,y,item) {
     ["移入回收站",recycle],
     ["创建 ZIP",makeZip]
   ];
-  if (!item.isDir && isArchive(item.name)) {
+  if (!trashed && !item.isDir && isArchive(item.name)) {
     actions.push(["📦 直接解压 · 当前目录",()=>extract("current")]);
     actions.push(["📦 直接解压 · 另一栏",()=>extract("other")]);
   }
-  if(!item.isDir && /\.html?$/i.test(item.name)){
+  if(!trashed && !item.isDir && /\.html?$/i.test(item.name)){
     actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
   }
-  actions.push([isAndroidBuild()?"分享给微信 / QQ":"分享 / 定位文件",shareSelected]);
-  if(state.locations?.trash && item.path.startsWith(state.locations.trash+"/")) {
-    actions.push(["♻ 恢复到原目录",restoreSelected]);
-  }
-  actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
-  actions.push(["＋ 创建 HTML 文件",newHtml]);
+  if(!trashed) actions.push(["分享给微信 / QQ",shareSelected]);
+
+  if(!trashed) actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
+  if(!trashed) actions.push(["＋ 创建 HTML 文件",newHtml]);
   if(!isAndroidBuild()) {
     actions.push(["属性",fileProperties]);
     if(!item.isDir)actions.push(["工具 · SHA-256",hashSelected]);
@@ -861,6 +896,8 @@ function wire() {
   if(sendToTrash) sendToTrash.addEventListener("click",recycle);
   const restoreButton=$("#restore-trash");
   if(restoreButton) restoreButton.addEventListener("click",restoreSelected);
+  const permanentButton=$("#permanent-trash");
+  if(permanentButton) permanentButton.addEventListener("click",permanentDeleteSelected);
   $("#edit").addEventListener("click",()=>{try{const item=oneItem();openItem(item)}catch(e){toast(e.message,true)}});
   $("#extract").addEventListener("click",()=>extract("other"));
   $("#zip").addEventListener("click",makeZip);
@@ -928,10 +965,10 @@ async function start() {
     }
     await Promise.all([
       navigate(0,state.locations.home),
-      navigate(1,state.locations.downloads)
+      navigate(1,state.locations.home)
     ]);
     switchActive(0);
-    toast("PC 版已就绪 · 双击打开 · 右键操作");
+    toast("双栏已对齐；点击 ⇄ 可将右栏重新同步到左栏");
   }catch(error){
     toast("启动失败："+error.message,true);
   }
