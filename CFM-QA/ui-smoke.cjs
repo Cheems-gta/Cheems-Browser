@@ -66,6 +66,7 @@ function mockAction(action,args){
       ...item,modified:"2026-11-11 11:11",isLink:false
     })),truncated:false};
   case "openWith":return {message:"已打开系统打开方式菜单"};
+  case "previewHex":return {path:args.path,name:args.path.split("/").pop(),text:"00000000  41 00 FF  |A..|",readOnly:true,previewType:"hex",truncated:true};
   case "icons":return {icons:Object.fromEntries((args.paths||[])
     .filter(p=>p.endsWith(".apk"))
     .map(p=>[p,"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Yf7fXsAAAAASUVORK5CYII="]))};
@@ -196,14 +197,17 @@ async function test(label,fn){
     archive.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
     await waitFor(()=>requests.filter(x=>x.action==="openWith").length>before);
   });
-  await test("non UTF-8 text falls back to an installed Android viewer",async()=>{
+  await test("non UTF-8 text offers safe hex preview instead of a dead end",async()=>{
     if(mode!=="android")return;
-    const before=requests.filter(x=>x.action==="openWith").length;
+    const before=requests.filter(x=>x.action==="previewHex").length;
     await setPath(0,downloads);
     const text=w.document.querySelector('#entries0 .entry[data-path$="legacy.txt"]');
     assert.ok(text);
     text.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
-    await waitFor(()=>requests.filter(x=>x.action==="openWith").length>before);
+    await waitFor(()=>requests.filter(x=>x.action==="previewHex").length>before);
+    assert.equal(w.document.querySelector("#editor-text").readOnly,true);
+    assert.equal(w.document.querySelector("#save-editor").disabled,true);
+    w.document.querySelector("#close-editor").click();
   });
   await test("Open Trash works without selecting a file",async()=>{
     const before=requests.filter(x=>x.action==="recycle").length;
@@ -268,7 +272,7 @@ async function test(label,fn){
     await waitFor(()=>requests.some(x=>x.action==="newFile"));
     await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
   });
-  await test("non-text files reach Android openWith instead of being blocked",async()=>{
+  await test("media uses system viewer while unknown binary files get a read-only preview",async()=>{
     for(const name of ["photo.jpg","book.pdf","video.mp4","sample.apk","unknown.bin"]){
       const before=requests.length;
       const filePath=downloads+"/"+name;
@@ -276,7 +280,12 @@ async function test(label,fn){
       await setPath(0,downloads);
       const row=[...w.document.querySelectorAll("#entries0 .entry[data-path]")].find(x=>x.dataset.path===filePath);
       row.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
-      await waitFor(()=>requests.slice(before).some(x=>x.action==="openWith"&&x.args.path===filePath));
+      const expected=name==="unknown.bin"?"previewHex":"openWith";
+      await waitFor(()=>requests.slice(before).some(x=>x.action===expected&&x.args.path===filePath));
+      if(expected==="previewHex") {
+        assert.equal(w.document.querySelector("#editor-text").readOnly,true);
+        w.document.querySelector("#close-editor").click();
+      }
     }
   });
   await test("HTML and archive buttons exist",async()=>{
