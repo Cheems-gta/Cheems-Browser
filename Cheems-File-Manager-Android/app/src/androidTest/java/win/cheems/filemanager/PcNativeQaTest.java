@@ -82,6 +82,25 @@ public final class PcNativeQaTest {
         }finally{PcNativeFileApi.protectedService=null;deleteSafe(dir);}
     }
 
+    @Test public void hexPreviewOpensUnknownBinaryFilesWithoutEditing() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File folder=new File(Environment.getExternalStorageDirectory(),
+            "Download/CFM_HexQA_"+UUID.randomUUID().toString().replace("-",""));
+        assertTrue(folder.mkdirs());
+        try {
+            File file=new File(folder,"saved-game.db");
+            byte[] bytes=new byte[9000];
+            bytes[0]=0x41;bytes[1]=0;bytes[2]=(byte)0xFF;
+            Files.write(file.toPath(),bytes);
+            JSONObject preview=run(ctx,"previewHex",arg("path",file.getPath()));
+            assertTrue(preview.getBoolean("readOnly"));
+            assertTrue(preview.getBoolean("truncated"));
+            assertTrue(preview.getString("text").startsWith("00000000  41 00 FF "));
+            assertTrue(preview.getString("text").contains("仅显示前 8 KiB"));
+            assertEquals(9000L,file.length());
+        } finally { deleteSafe(folder); }
+    }
+
     @Test public void packageIconsDoNotRequireDirectoryStat() throws Exception {
         Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
         String installed="/storage/emulated/0/Android/data/"+ctx.getPackageName();
