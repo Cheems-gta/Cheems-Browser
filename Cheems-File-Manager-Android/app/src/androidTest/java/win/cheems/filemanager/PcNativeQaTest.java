@@ -43,6 +43,59 @@ public final class PcNativeQaTest {
         }
         f.delete();
     }
+
+    private static void p16(byte[] b,int pos,int n) {
+        b[pos]=(byte)n; b[pos+1]=(byte)(n>>>8);
+    }
+    private static void p32(byte[] b,int pos,int n) {
+        p16(b,pos,n);p16(b,pos+2,n>>>16);
+    }
+    /** Minimal PE resource-only fixture, containing one 48x48 RT_GROUP_ICON
+     * referencing one RT_ICON PNG. There is no executable program code.
+     */
+    private static File createPeFixture(File directory) throws Exception {
+        byte[] png=android.util.Base64.decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Yf7fXsAAAAASUVORK5CYII=",
+            android.util.Base64.DEFAULT);
+        byte[] pe=new byte[2048];
+        pe[0]='M';pe[1]='Z';
+        p32(pe,0x3c,0x80);
+        pe[0x80]='P';pe[0x81]='E';
+        p16(pe,0x86,1);          // 1 .rsrc section
+        p16(pe,0x94,0xE0);       // IMAGE_OPTIONAL_HEADER size
+        p16(pe,0x98,0x10b);      // PE32
+        p32(pe,0x98+96+16,0x1000);  // resource directory RVA
+        p32(pe,0x98+96+20,0x600);   // resource directory size
+        int sec=0x98+0xE0;
+        p32(pe,sec+8,0x600);     // virtual size
+        p32(pe,sec+12,0x1000);   // virtual address
+        p32(pe,sec+16,0x600);    // raw data size
+        p32(pe,sec+20,0x200);    // raw file offset
+        int res=0x200;
+        p16(pe,res+14,2);        // root: icon and icon group
+        p32(pe,res+16,3);p32(pe,res+20,0x80000080);
+        p32(pe,res+24,14);p32(pe,res+28,0x800000a0);
+        p16(pe,res+0x80+14,1);
+        p32(pe,res+0x80+16,1);p32(pe,res+0x80+20,0x800000c0);
+        p16(pe,res+0xa0+14,1);
+        p32(pe,res+0xa0+16,1);p32(pe,res+0xa0+20,0x800000e0);
+        p16(pe,res+0xc0+14,1);
+        p32(pe,res+0xc0+16,1033);p32(pe,res+0xc0+20,0x100);
+        p16(pe,res+0xe0+14,1);
+        p32(pe,res+0xe0+16,1033);p32(pe,res+0xe0+20,0x110);
+        p32(pe,res+0x100,0x1200);p32(pe,res+0x104,png.length);
+        p32(pe,res+0x110,0x1280);p32(pe,res+0x114,20);
+        System.arraycopy(png,0,pe,0x400,png.length);
+        int grp=0x480;
+        p16(pe,grp+2,1);p16(pe,grp+4,1);
+        pe[grp+6]=48;pe[grp+7]=48;
+        p16(pe,grp+10,1);p16(pe,grp+12,32);
+        p32(pe,grp+14,png.length);p16(pe,grp+18,1);
+        File target=new File(directory,"CFM_QA_Icon.exe");
+        Files.write(target.toPath(),pe);
+        return target;
+    }
+
     @Test public void nativeFileOperationsWorkOnAndroidEmulator() throws Exception {
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
         assertTrue("CI emulator must grant MANAGE_EXTERNAL_STORAGE",
@@ -123,6 +176,14 @@ public final class PcNativeQaTest {
             Uri sharedUri=share.getParcelableExtra(Intent.EXTRA_STREAM);
             assertNotNull(sharedUri);
             assertEquals("content",sharedUri.getScheme());
+
+            // Parse embedded PE RT_GROUP_ICON/RT_ICON without executing the EXE.
+            File peFixture=createPeFixture(right);
+            JSONObject peIcons=run(context,"icons",new JSONObject()
+                .put("paths",single(peFixture))).getJSONObject("icons");
+            String peData=peIcons.optString(peFixture.getCanonicalPath(),"");
+            assertTrue("Windows EXE embedded icon must decode as PNG",
+                peData.startsWith("data:image/png;base64,"));
 
             // This is NOT Android system recycle bin. CFM tracks original paths.
             run(context,"recycle",arg("paths",single(note)));
