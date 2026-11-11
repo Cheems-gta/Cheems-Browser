@@ -24,6 +24,7 @@ const fixture={
   [downloads]:[
     {name:"sample.zip",isDir:false,path:downloads+"/sample.zip",size:532},
     {name:"sample.html",isDir:false,path:downloads+"/sample.html",size:250},
+    {name:"legacy.txt",isDir:false,path:downloads+"/legacy.txt",size:250},
     {name:"sample.apk",isDir:false,path:downloads+"/sample.apk",size:30000}
   ],
   [trash]:[{name:"deleted.txt",isDir:false,path:trash+"/deleted.txt",size:7}]
@@ -189,13 +190,19 @@ async function test(label,fn){
   await test("archives offer Android system open-with instead of dead-end toast",async()=>{
     if(mode!=="android")return;
     const before=requests.filter(x=>x.action==="openWith").length;
-    await w.openItem({name:"sample.zip",path:downloads+"/sample.zip",isDir:false});
+    await setPath(0,downloads);
+    const archive=w.document.querySelector('#entries0 .entry[data-path$="sample.zip"]');
+    assert.ok(archive);
+    archive.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
     await waitFor(()=>requests.filter(x=>x.action==="openWith").length>before);
   });
   await test("non UTF-8 text falls back to an installed Android viewer",async()=>{
     if(mode!=="android")return;
     const before=requests.filter(x=>x.action==="openWith").length;
-    await w.openItem({name:"legacy.txt",path:downloads+"/legacy.txt",isDir:false});
+    await setPath(0,downloads);
+    const text=w.document.querySelector('#entries0 .entry[data-path$="legacy.txt"]');
+    assert.ok(text);
+    text.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
     await waitFor(()=>requests.filter(x=>x.action==="openWith").length>before);
   });
   await test("Open Trash works without selecting a file",async()=>{
