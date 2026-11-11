@@ -1,24 +1,36 @@
-# Cheems File Manager Android V0.2
-Android 11+ file manager, with an MT-inspired dark dual-pane list and full path navigation.
+# Cheems File Manager Android V0.3
 
-## New in 0.2
-- Shows files immediately at `/storage/emulated/0/` after one-time Android system "Manage all files" authorization.
-- Stores file paths across app restarts (and permission normally stays granted until revoked).
-- Top full current path (tap to enter a path); each pane has an independent current directory.
-- Portrait/landscape dual side-by-side pane, folder + file names and modified time, storage usage.
-- Tap folder to navigate; tap file to select; long-press folder to select it.
-- Copy selection to the other pane, create folder, rename, edit common UTF-8 text files (<=256 KB).
-- Non-root, offline, no ads, no INTERNET permission.
-- File copy runs in background on a single worker. Failed copies may leave incomplete targets.
-- Delete intentionally not included to limit accidental loss in initial testing.
+A native Android 11+ file manager featuring an MT-inspired dual pane file explorer. Uses Android's official one-time `MANAGE_EXTERNAL_STORAGE` permission; no root or Shizuku required.
 
-## Permissions
-Uses the standard Android MANAGE_EXTERNAL_STORAGE special access panel. Open, tap authorization button, enable it once and return. Access is then remembered by Android. This does NOT grant access to Android/data or other protected app private directories.
-Shizuku is not required or integrated in v0.2. Optional Shizuku support may follow, but Shizuku authorization is not equivalent to granting broad private app data access and may require a running Shizuku service.
+## Changes since V0.2
+- Remove bottom toolbar completely.
+- Fix Android 15/16/17 status bar overlap using `WindowInsets` and reduce path font size.
+- Top toolbar: current full path, **search** button, options menu.
+- Search current pane recursively (bounded to 35,000 scanned entries, first 120 matches).
+- Long-press file/folder for a context menu: copy, rename, delete (permanent + confirmation), text edit, **extract** compatible archives.
+- More menu at top for new folder, up, refresh, permission, supported formats.
+- Archive extraction uses Apache Commons Compress 1.28.0, XZ for Java 1.10, Junrar 8.1.2.
 
-## Install note
-GitHub Actions builds a **debug-signed** APK; this is an experimental build.
-Debug APK signature may differ from 0.1's build because CI creates fresh signing keys; if the phone says 'app not installed', uninstall the old test app before installing v0.2. Export test files first; uninstall clears app preferences. Never disable system security protections to install.
+## Supported extraction (subject to format / algorithm)
+- ZIP, split ZIP (.z01/.zip), JAR, APK, XAPK, APKS, APKM
+- 7z and 7z.001 / 7z.002 sequences (joined to temporary archive for extraction)
+- RAR including common multivolume formats via Junrar (depends on archive)
+- TAR, TGZ/TAR.GZ, TBZ2/TAR.BZ2, TXZ/TAR.XZ, TAR.LZMA, TAR.LZ4
+- GZ, BZ2, XZ, LZMA, LZ4, legacy Unix Z
+- AR, DEB, CPIO, ARJ, DUMP
 
-## CI build
-GitHub branch `cfm-android-v0.2`, workflow `.github/workflows/cfm-android-build.yml`. Download the artifact `CheemsFM-Android-V0.2-debug-apk` after a successful run.
+NOT supported: CAB, ISO, WIM, DMG, ACE, arbitrary proprietary types, ZIP spanned across removable volumes. Encrypted archives and uncommon compression methods may not work. The user request for 'every niche format' is not fully achievable with these open-source libraries.
+
+## Extraction safety
+- For ZIP/7z/TAR/etc., reject path traversal, skip link entries where possible, cap entries at 4k, per-file at 512 MB, total output at 1 GiB. Large/odd archives may exceed these limits and fail. Partial extraction directories may remain after failure.
+- RAR extraction uses Junrar's own extraction security; this app's global output limits do **not** apply to RAR. Avoid unknown untrusted RAR archives.
+- Split 7z.001/ZIP.001 combines up to 100 contiguous parts into temporary disk space (<=2 GB). All volumes must be in the same folder, starting with .001. Incomplete volumes may fail.
+- **Delete is permanent**, does not use a recycle bin. A separate confirmation is required before recursive deletion. Back up important files.
+- Search/copy/extract/delete run on a worker thread. File browsing screens are built on the main thread and folders with 400+ entries display only the first 400.
+
+## Testing
+- GitHub Actions build successful != on-device fully tested.
+- Debug signing key can change between CI builds, so you may need to uninstall older versions before installing this one. Do not disable Android's protections to install it.
+- Permission generally persists, but uninstalling or revoking it can reset it.
+- Android/data, app private storage and other protected directories are still inaccessible with MANAGE_EXTERNAL_STORAGE.
+- Shizuku support remains **not implemented** in V0.3.
