@@ -77,6 +77,7 @@ final class PcNativeFileApi {
             case "list": return list(required(args,"path"));
             case "search": return search(required(args,"path"),required(args,"query"));
             case "read": return read(required(args,"path"));
+            case "previewHex": return previewHex(required(args,"path"));
             case "save": return save(required(args,"path"),required(args,"text"),
                                       args.optBoolean("bom",false));
             case "copy": return transfer(paths(args),required(args,"target"),false);
@@ -521,6 +522,52 @@ final class PcNativeFileApi {
             .put("name",file.getName()).put("text",text).put("bom",bom)
             .put("readOnly",isProtectedPath(path))
             .put("html",suffix.equals(".htm")||suffix.equals(".html"));
+    }
+
+    /**
+     * Bounded read-only fallback for files without a registered Android viewer,
+     * including common binary files in Android/data. Never tries to interpret,
+     * overwrite, or load the whole file into the WebView.
+     */
+    private static JSONObject previewHex(String path) throws Exception {
+        File file=safeFile(path);
+        if (!isProtectedPath(path) && !file.isFile())
+            throw new IOException("不是普通文件");
+        final int max=8192;
+        byte[] sample=new byte[max+1];
+        int count=0;
+        try(InputStream in=input(file)) {
+            while(count<sample.length) {
+                int n=in.read(sample,count,sample.length-count);
+                if(n<0)break;
+                if(n==0)break;
+                count+=n;
+            }
+        }
+        int shown=Math.min(count,max);
+        final char[] hex="0123456789ABCDEF".toCharArray();
+        StringBuilder preview=new StringBuilder(shown*5+100);
+        for(int pos=0;pos<shown;pos+=16) {
+            preview.append(String.format(Locale.ROOT,"%08X  ",pos));
+            for(int i=0;i<16;i++) {
+                if(pos+i<shown) {
+                    int value=sample[pos+i]&255;
+                    preview.append(hex[value>>>4]).append(hex[value&15]).append(' ');
+                } else preview.append("   ");
+                if(i==7)preview.append(' ');
+            }
+            preview.append(" |");
+            for(int i=0;i<16 && pos+i<shown;i++) {
+                int value=sample[pos+i]&255;
+                preview.append(value>=32 && value<=126?(char)value:'.');
+            }
+            preview.append("|\\n");
+        }
+        if(count>max)preview.append("\\n仅显示前 8 KiB；原文件保持不变。");
+        return new JSONObject().put("path",file.getAbsolutePath())
+            .put("name",file.getName()).put("text",preview.toString())
+            .put("readOnly",true).put("previewType","hex")
+            .put("truncated",count>max);
     }
 
     private static JSONObject save(String path,String text,boolean bom)throws Exception {
