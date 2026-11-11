@@ -152,9 +152,10 @@ final class PcNativeFileApi {
         }
         if(!file.canRead())throw new IOException("没有权限读取此文件");
         Uri uri=FileProvider.getUriForFile(context,context.getPackageName()+".fileshare",file);
-        return new Intent(Intent.ACTION_VIEW).setDataAndType(uri,mimeType(original.getName()))
-            .setClipData(ClipData.newRawUri("CFM 文件",uri))
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(uri,mimeType(original.getName()));
+        view.setClipData(ClipData.newRawUri("CFM 文件",uri));
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return view;
     }
 
     /** Actual Android OS share chooser. Apps such as WeChat and QQ may appear
