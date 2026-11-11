@@ -277,6 +277,7 @@ final class PcNativeFileApi {
             String cached=ICON_CACHE.get(key);
             if(cached==null) {
                 Drawable drawable=null;
+                String peIcon=null;
                 try {
                     if(file.isDirectory()) {
                         File parent=file.getParentFile();
@@ -287,6 +288,10 @@ final class PcNativeFileApi {
                             if(file.getName().matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))
                                 drawable=pm.getApplicationIcon(file.getName());
                         }
+                    } else if(file.isFile() && (
+                        extension(file.getName()).equals(".exe") ||
+                        extension(file.getName()).equals(".dll"))) {
+                        peIcon=PeIconReader.readIcon(file);
                     } else if(file.isFile() && file.length()<150L*1024*1024 &&
                         extension(file.getName()).equals(".apk")) {
                         android.content.pm.PackageInfo archive=
@@ -302,7 +307,7 @@ final class PcNativeFileApi {
                     // Missing, not installed, restricted, or malformed APK:
                     // use the normal file/folder icon.
                 }
-                cached=drawable==null?NO_ICON:iconToDataUri(drawable);
+                cached=peIcon!=null?peIcon:(drawable==null?NO_ICON:iconToDataUri(drawable));
                 ICON_CACHE.put(key,cached);
             }
             if(!NO_ICON.equals(cached))result.put(key,cached);
