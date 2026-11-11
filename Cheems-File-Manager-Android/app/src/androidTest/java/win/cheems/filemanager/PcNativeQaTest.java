@@ -82,6 +82,15 @@ public final class PcNativeQaTest {
         }finally{PcNativeFileApi.protectedService=null;deleteSafe(dir);}
     }
 
+    @Test public void packageIconsDoNotRequireDirectoryStat() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String installed="/storage/emulated/0/Android/data/"+ctx.getPackageName();
+        String missing="/storage/emulated/0/Android/data/com.cfm.nonexistent.qa";
+        JSONObject icons=run(ctx,"icons",arg("paths",new JSONArray().put(installed).put(missing))).getJSONObject("icons");
+        assertTrue(icons.getString(installed).startsWith("data:image/png;base64,"));
+        assertTrue(icons.getString(missing).startsWith("data:image/png;base64,"));
+    }
+
     private static JSONObject arg(String key,Object value) throws Exception {
         return new JSONObject().put(key,value);
     }

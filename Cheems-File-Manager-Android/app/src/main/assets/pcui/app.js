@@ -946,6 +946,7 @@ function contextMenu(x,y,item) {
   for (const [label,fn] of actions) {
     const b=document.createElement("button");
     b.textContent=label;
+    if(fn===permanentDeleteSelected){b.classList.add("danger");b.style.color="#ff626b";b.style.fontWeight="700";}
     b.addEventListener("click",()=>{menu.classList.add("hidden");fn();});
     menu.append(b);
   }

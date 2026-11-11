@@ -339,14 +339,17 @@ final class PcNativeFileApi {
                 Drawable drawable=null;
                 String peIcon=null;
                 try {
-                    if(file.isDirectory()) {
-                        File parent=file.getParentFile();
-                        String p=parent==null?"":parent.getAbsolutePath().replace('\\','/');
-                        // Only package-like folder names under standard Android directories.
-                        if(p.endsWith("/Android/data") || p.endsWith("/Android/obb") ||
-                           p.endsWith("/Android/media")) {
-                            if(file.getName().matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))
-                                drawable=pm.getApplicationIcon(file.getName());
+                    File parent=file.getParentFile();
+                    String parentPath=parent==null?"":parent.getAbsolutePath();
+                    String androidRoot=base().getCanonicalPath()+"/Android/";
+                    boolean packageFolder=(parentPath.equals(androidRoot+"data") ||
+                        parentPath.equals(androidRoot+"obb") || parentPath.equals(androidRoot+"media"));
+                    if(packageFolder) {
+                        // Shizuku can list directories that this UID cannot stat.
+                        // PackageManager lookup needs only the package name.
+                        try { drawable=pm.getApplicationIcon(file.getName()); }
+                        catch(PackageManager.NameNotFoundException missing) {
+                            drawable=pm.getDefaultActivityIcon();
                         }
                     } else if(file.isFile() && (
                         extension(file.getName()).equals(".exe") ||
