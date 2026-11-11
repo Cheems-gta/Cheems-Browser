@@ -127,13 +127,15 @@ async function historyStep(delta) {
   });
 }
 async function syncOtherPane() {
-  const index=state.active;
-  const current=state.panes[index].path;
-  if(!current){toast("请先打开文件夹");return;}
+  // Consistent with user's expectation: align the RIGHT pane to the LEFT,
+  // regardless of which pane was last selected. Do not move any files.
+  const originalActive=state.active;
+  const left=state.panes[0].path;
+  if(!left){toast("左栏尚未打开文件夹");return;}
   await guarded(async()=>{
-    await navigate(1-index,current);
-    switchActive(index);
-    toast("左右两栏已同步到："+current);
+    await navigate(1,left);
+    switchActive(originalActive);
+    toast("已同步：右栏 → "+left);
   });
 }
 async function createEmptyFile() {
@@ -852,10 +854,10 @@ async function start() {
     }
     await Promise.all([
       navigate(0,state.locations.home),
-      navigate(1,state.locations.downloads)
+      navigate(1,state.locations.home)
     ]);
     switchActive(0);
-    toast("PC 版已就绪 · 双击打开 · 右键操作");
+    toast("双栏已对齐；点击 ⇄ 可将右栏重新同步到左栏");
   }catch(error){
     toast("启动失败："+error.message,true);
   }
