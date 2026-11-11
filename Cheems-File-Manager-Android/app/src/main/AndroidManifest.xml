@@ -6,6 +6,15 @@
         android:label="CFM PC 界面预览"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileshare"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/cfm_file_paths" />
+        </provider>
         <activity
             android:name=".PcPreviewActivity"
             android:exported="true"
