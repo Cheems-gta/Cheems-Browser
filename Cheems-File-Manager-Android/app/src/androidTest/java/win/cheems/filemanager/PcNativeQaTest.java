@@ -106,6 +106,17 @@ public final class PcNativeQaTest {
             assertEquals(expected,new String(Files.readAllBytes(
                 new File(out.getString("folder"),"qa_note.txt").toPath()),StandardCharsets.UTF_8));
 
+            // Copy this very APK into shared storage and verify its REAL
+            // launcher icon can be decoded from the archive (no installation).
+            File copiedApk=new File(right,"CFM_QA_own_app.apk");
+            File installedApk=new File(context.getApplicationInfo().sourceDir);
+            Files.copy(installedApk.toPath(),copiedApk.toPath());
+            JSONObject pngIcons=run(context,"icons",new JSONObject()
+                .put("paths",single(copiedApk))).getJSONObject("icons");
+            String icon=pngIcons.optString(copiedApk.getCanonicalPath(),"");
+            assertTrue("An Android APK with app icon should return its own PNG",
+                icon.startsWith("data:image/png;base64,"));
+
             Intent share=PcNativeFileApi.shareIntent(context,
                 new JSONObject().put("paths",single(note)));
             assertEquals(Intent.ACTION_SEND,share.getAction());
