@@ -36,3 +36,11 @@ dotnet publish ./Cheems-File-Manager-PC/CheemsFileManagerPC.csproj -c Release -r
 Download the artifact `CheemsFileManager-PC-V0.1-win-x64` after the build; the archive contains the program files and EXE. The WPF application owns the embedded UI; no local web server or second browser process to configure.
 
 Source branch: `cfm-pc-web-v0.1` (independent from browser, Android CFM, and the earlier Windows WPF experiment branches). The existing repo `main` branch is left intact.
+
+## V0.8 — EXE 原始图标、APK 内置图标与搜索定位
+
+- Windows `.exe` / `.dll` / `.msi`：通过 Windows Shell 读取对应文件的图标并在文件列表显示；非联网查询。
+- `.apk`：直接查看 ZIP 资源中常见的 `res/mipmap*/ic_launcher.*`、`app_icon.*` 等图像。此方法是最佳匹配而非完整解析 Android ARSC 资源索引，某些 APK 会回退默认图标。
+- 图标按实际可视文件惰性加载，单批最多 12 条，并按路径、大小和修改时间缓存，减少卡顿。
+- 点击搜索结果后会进入该文件的上级目录，自动滚动至匹配条目；文件名变绿色约 2.6 秒后恢复普通文字颜色。搜索文件夹时也会先显示它所在的父目录。
+- 不执行 EXE、APK，也不读取网络图标；只有 Windows PC 版可直接调用系统原生 EXE 图标。
