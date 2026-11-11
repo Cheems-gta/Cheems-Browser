@@ -72,6 +72,8 @@ final class PcNativeFileApi {
             case "mkdir": return mkdir(required(args,"path"),required(args,"name"));
             case "newFile": return newFile(required(args,"path"),required(args,"name"));
             case "recycle": return recycle(paths(args));
+            case "openTrash": return trashLocation();
+            case "restore": return restoreTrash(paths(args));
             case "extract": return extract(context,required(args,"path"),required(args,"target"));
             case "zip": return zip(paths(args),required(args,"target"));
             case "newHtml": return newHtml(required(args,"path"),required(args,"name"));
@@ -220,6 +222,7 @@ final class PcNativeFileApi {
             .put("desktop",home.getAbsolutePath())
             .put("documents",docs.isDirectory()?docs.getAbsolutePath():home.getAbsolutePath())
             .put("downloads",download.isDirectory()?download.getAbsolutePath():home.getAbsolutePath())
+            .put("trash",new File(home,".CFM_RecycleBin").getAbsolutePath())
             .put("drives",new JSONArray().put(new JSONObject()
                 .put("path",home.getAbsolutePath()).put("label","手机内部存储")));
     }
@@ -452,20 +455,106 @@ final class PcNativeFileApi {
         } else copyFile(source,dest,false);
     }
 
+    private static File trashDir() throws IOException {
+        File trash=inside(new File(base(),".CFM_RecycleBin").getPath());
+        if(!trash.isDirectory() && !trash.mkdir())
+            throw new IOException("无法创建 CFM 回收站文件夹");
+        return trash;
+    }
+
+    private static JSONObject readTrashIndex(File trash) throws IOException {
+        File indexFile=new File(trash,".cfm_index.json");
+        if(!indexFile.isFile())return new JSONObject();
+        try(InputStream in=new FileInputStream(indexFile)){
+            ByteArrayOutputStream output=new ByteArrayOutputStream();
+            byte[] buffer=new byte[4096];int n;
+            while((n=in.read(buffer))!=-1){
+                if(output.size()+n>256*1024)
+                    throw new IOException("CFM 回收站索引超过大小限制");
+                output.write(buffer,0,n);
+            }
+            return new JSONObject(output.toString("UTF-8"));
+        } catch(org.json.JSONException ex) {
+            throw new IOException("回收站索引损坏；为避免错误恢复，请先备份回收站",ex);
+        }
+    }
+
+    private static void writeTrashIndex(File trash,JSONObject meta) throws IOException {
+        File target=new File(trash,".cfm_index.json");
+        File temporary=new File(trash,".cfm_index.json.tmp");
+        try(OutputStream out=new FileOutputStream(temporary,false)){
+            out.write(meta.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        try {
+            Files.move(temporary.toPath(),target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }catch(Exception ex){
+            throw new IOException("回收站索引保存失败，文件可能已移动；请检查回收站",ex);
+        }
+    }
+
+    private static JSONObject trashLocation() throws Exception {
+        return new JSONObject().put("path",trashDir().getAbsolutePath())
+            .put("message","已打开 CFM 本地回收站");
+    }
+
     private static JSONObject recycle(JSONArray paths)throws Exception {
-        File trash=inside(new File(base(),".CFM_RecycleBin").getAbsolutePath());
-        if(!trash.exists()&&!trash.mkdir())throw new IOException("无法创建 CFM 回收站文件夹");
+        File trash=trashDir();
+        JSONObject meta=readTrashIndex(trash);
         int count=0;
         for(int i=0;i<paths.length();i++){
             File source=safeFile(paths.getString(i));
-            if(!source.exists())throw new IOException("要删除的文件不存在");
-            if(isChild(trash,source))throw new IOException("不能回收包含回收站的父文件夹");
-            if(source.getParentFile().equals(trash))throw new IOException("文件已经在 CFM 回收站中");
+            if(!source.exists())throw new IOException("要回收的文件不存在");
+            if(isChild(trash,source))
+                throw new IOException("不能回收包含回收站的父文件夹");
+            if(source.getParentFile().equals(trash))
+                throw new IOException("文件已经在 CFM 回收站中");
             File moved=unique(trash,source.getName(),source.isDirectory());
-            if(!source.renameTo(moved))throw new IOException("移动到 CFM 回收站失败");
+            if(!source.renameTo(moved))throw new IOException("移入 CFM 回收站失败");
+            meta.put(moved.getName(),source.getAbsolutePath());
+            writeTrashIndex(trash,meta);
             count++;
         }
-        return new JSONObject().put("count",count);
+        return new JSONObject().put("count",count).put("message","已移入 CFM 本地回收站");
+    }
+
+    private static JSONObject restoreTrash(JSONArray paths)throws Exception {
+        File trash=trashDir();
+        JSONObject meta=readTrashIndex(trash);
+        File fallback=inside(new File(base(),"Download/CFM_Restored").getPath());
+        int count=0,fallbackCount=0;
+        for(int i=0;i<paths.length();i++){
+            File item=safeFile(paths.getString(i));
+            if(!item.getParentFile().getCanonicalFile().equals(trash.getCanonicalFile()))
+                throw new IOException("只能恢复回收站顶层的文件");
+            if(!item.exists())throw new IOException("回收站中的文件不存在："+item.getName());
+            if(item.getName().startsWith(".cfm_index.json"))
+                throw new IOException("回收站索引不能作为文件恢复");
+            String original=meta.optString(item.getName(),"");
+            File dest;
+            if(!original.isEmpty()){
+                dest=inside(original);
+                if(dest.getParentFile()==null || !dest.getParentFile().isDirectory() ||
+                    isChild(dest,trash) || dest.getCanonicalFile().equals(trash.getCanonicalFile()))
+                    original="";
+            }
+            if(original.isEmpty()){
+                if(!fallback.isDirectory()&&!fallback.mkdirs())
+                    throw new IOException("无法创建恢复目录："+fallback.getPath());
+                dest=new File(fallback,item.getName());
+                fallbackCount++;
+            }
+            File finalDest=unique(dest.getParentFile(),dest.getName(),item.isDirectory());
+            if(!item.renameTo(finalDest))
+                throw new IOException("恢复失败（原文件保留在回收站）");
+            meta.remove(item.getName());
+            writeTrashIndex(trash,meta);
+            count++;
+        }
+        return new JSONObject().put("count",count)
+            .put("message",fallbackCount>0 ?
+                "已恢复 "+count+" 项，部分旧文件放在 Download/CFM_Restored" :
+                "已恢复 "+count+" 项到原目录（同名时自动更名）");
     }
 
     private static JSONObject extract(Context context,String path,String target)throws Exception {
