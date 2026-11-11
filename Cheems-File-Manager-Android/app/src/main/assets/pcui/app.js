@@ -594,33 +594,66 @@ function closeEditor() {
   $("#editor-overlay").classList.add("hidden");
   $("#html-preview").srcdoc="";
 }
-async function openItem(item) {
-  if(item.isDir) return guarded(()=>navigate(state.active,item.path));
-  if(isAndroidBuild() && /\.apk$/i.test(item.name))
-    return guarded(()=>call("openWith",{path:item.path}));
-  if(isArchive(item.name)) {
-    toast("已选中压缩包，使用顶部「解压」或右键菜单提取");
+async function openWithAndroid(item) {
+  if(!isAndroidBuild()) {
+    toast("系统打开方式仅在 Android 预览中可用");
     return;
   }
-  if(!isText(item.name)) {
-    return guarded(()=>call("openWith",{path:item.path}));
+  return guarded(async()=>{
+    const response=await call("openWith",{path:item.path});
+    toast(response.message || "已调用 Android 系统打开方式");
+    return response;
+  });
+}
+function showTextEditor(data) {
+  currentEditor=data;
+  $("#editor-file").textContent=data.path;
+  $("#editor-text").value=data.text;
+  $("#editor-text").readOnly=!!data.readOnly;
+  $("#save-editor").disabled=!!data.readOnly;
+  $("#editor-mode").textContent=(data.bom?"UTF-8（带 BOM）":"UTF-8")+
+      (data.readOnly?" · 只读":"");
+  $("#editor-overlay").classList.remove("hidden");
+  $("#preview-button").classList.toggle("hidden",!data.html);
+  state.previewVisible=false;
+  $("#preview-pane").classList.add("hidden");
+  $("#editor-text").focus();
+}
+async function openItem(item) {
+  if(item.isDir) return guarded(()=>navigate(state.active,item.path));
+  if(!isAndroidBuild()) {
+    if(isArchive(item.name)){
+      toast("请选择压缩包，并使用解压菜单");
+      return;
+    }
+    if(!isText(item.name)){
+      toast("请在 Windows 资源管理器中选择适当的程序打开此类文件");
+      return;
+    }
+    return openEditor(item.path);
   }
-  return openEditor(item.path);
+  // ZIP/7z and APK are not editable text. Let the system's viewers open
+  // them; the CFM archive extraction feature stays available separately.
+  if(isArchive(item.name) || !isText(item.name))return openWithAndroid(item);
+  try {
+    const data=await call("read",{path:item.path});
+    showTextEditor(data);
+  } catch(error) {
+    const message=String(error.message||error);
+    if(/Shizuku|没有权限|无权限|拒绝访问|未授权/.test(message)) {
+      toast(message,true);
+      return;
+    }
+    // UTF-16 / GBK and oversized text files can be viewed through
+    // an installed editor instead of getting stuck on a UTF-8-only parser.
+    toast("内置编辑器无法读取，尝试用系统应用打开…");
+    return openWithAndroid(item);
+  }
 }
 async function openEditor(path) {
-  await guarded(async()=>{
+  return guarded(async()=>{
     const data=await call("read",{path});
-    currentEditor=data;
-    $("#editor-file").textContent=data.path;
-    $("#editor-text").value=data.text;
-    $("#editor-text").readOnly=!!data.readOnly;
-    $("#save-editor").disabled=!!data.readOnly;
-    $("#editor-mode").textContent=(data.bom?"UTF-8（带 BOM）":"UTF-8")+(data.readOnly?" · 只读":"");
-    $("#editor-overlay").classList.remove("hidden");
-    $("#preview-button").classList.toggle("hidden",!data.html);
-    state.previewVisible=false;
-    $("#preview-pane").classList.add("hidden");
-    $("#editor-text").focus();
+    showTextEditor(data);
   });
 }
 async function saveEditor() {
@@ -930,6 +963,8 @@ function contextMenu(x,y,item) {
   if(!trashed && !item.isDir && /\.html?$/i.test(item.name)){
     actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
   }
+  if(!trashed && isAndroidBuild() && !item.isDir)
+    actions.push(["↗ 用其他应用打开",()=>openWithAndroid(item)]);
   if(!trashed) actions.push(["分享给微信 / QQ",shareSelected]);
 
   if(!trashed) actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
