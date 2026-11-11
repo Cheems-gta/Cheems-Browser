@@ -795,7 +795,10 @@ function wire() {
   };
   for(const [name,handler] of Object.entries(navCommands)) {
     const control=document.getElementById(name);
-    if(control)control.addEventListener("click",handler);
+    if(control)control.addEventListener("click",event=>{
+      if(name==="nav-plus") event.stopPropagation();
+      handler();
+    });
   }
   const touchActions = $("#mobile-file-actions");
   if (touchActions) touchActions.addEventListener("click",e => {e.stopPropagation();mobileActionsForSelection();});
