@@ -561,9 +561,9 @@ final class PcNativeFileApi {
                 int value=sample[pos+i]&255;
                 preview.append(value>=32 && value<=126?(char)value:'.');
             }
-            preview.append("|\\n");
+            preview.append("|\n");
         }
-        if(count>max)preview.append("\\n仅显示前 8 KiB；原文件保持不变。");
+        if(count>max)preview.append("\n仅显示前 8 KiB；原文件保持不变。");
         return new JSONObject().put("path",file.getAbsolutePath())
             .put("name",file.getName()).put("text",preview.toString())
             .put("readOnly",true).put("previewType","hex")
