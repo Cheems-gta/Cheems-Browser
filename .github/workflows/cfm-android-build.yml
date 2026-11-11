@@ -1,7 +1,7 @@
-name: CFM Android V1.0 - Custom icon + QA + APK
+name: CFM Android V1.1 - Custom icon + QA + APK
 on:
   push:
-    branches: [cfm-pc-android-preview-v1.0]
+    branches: [cfm-pc-android-preview-v1.1]
     paths:
       - "Cheems-File-Manager-Android/**"
       - "CFM-QA/**"
@@ -59,7 +59,7 @@ jobs:
       - name: Upload verified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFM-PC-UI-Android-Preview-V1.0-NativeIcons-APK
+          name: CheemsFM-PC-UI-Android-Preview-V1.1-AccessFix-APK
           path: Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -96,4 +96,4 @@ jobs:
           script: |
             gradle -p Cheems-File-Manager-Android :app:installDebug :app:installDebugAndroidTest --stacktrace
             adb shell appops set win.cheems.filemanager.pcpreview MANAGE_EXTERNAL_STORAGE allow
-            adb shell am instrument -w win.cheems.filemanager.pcpreview.test/androidx.test.runner.AndroidJUnitRunner
+            gradle -p Cheems-File-Manager-Android :app:connectedDebugAndroidTest --stacktrace

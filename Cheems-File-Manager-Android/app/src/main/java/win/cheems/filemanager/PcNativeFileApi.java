@@ -54,6 +54,7 @@ import java.util.zip.ZipOutputStream;
 
 /** Android implementations of the original CFM PC WebView file-operation protocol. */
 final class PcNativeFileApi {
+    static volatile IProtectedDir protectedService;
     private static final int MAX_LIST=2000;
     private static final int MAX_SEARCH=50000;
     private static final int MAX_SEARCH_RESULTS=180;
@@ -97,6 +98,64 @@ final class PcNativeFileApi {
         }
     }
 
+
+    static boolean isProtectedPath(String path) {
+        try {
+            String p=inside(path).getPath();
+            String root=base().getCanonicalPath()+"/Android/";
+            return p.equals(root+"data")||p.startsWith(root+"data/")||
+                   p.equals(root+"obb")||p.startsWith(root+"obb/");
+        }catch(Exception e){return false;}
+    }
+    private static IProtectedDir protectedReader() throws IOException {
+        IProtectedDir service=protectedService;
+        if(service==null||!service.asBinder().isBinderAlive())
+            throw new IOException("请通过底部 ⋮ 连接 / 授权 Shizuku，再打开 Android/data 或 obb");
+        return service;
+    }
+    private static InputStream input(File file) throws Exception {
+        try { return new FileInputStream(file); }
+        catch(IOException denied) {
+            if(!isProtectedPath(file.getPath()))throw denied;
+            return new android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                protectedReader().openRead(file.getPath()));
+        }
+    }
+    static String mimeType(String name) {
+        String suffix=extension(name).replaceFirst("^\\.","");
+        if(suffix.equals("apk"))return "application/vnd.android.package-archive";
+        String mime=MimeTypeMap.getSingleton().getMimeTypeFromExtension(suffix);
+        return mime==null?"application/octet-stream":mime;
+    }
+    static Intent openIntent(Context context,JSONObject args) throws Exception {
+        requireAccess();
+        File original=safeFile(required(args,"path")), file=original;
+        if(!file.isFile() && !isProtectedPath(file.getPath()))
+            throw new IOException("文件不存在或不是普通文件");
+        if(!file.canRead() && isProtectedPath(file.getPath())) {
+            File previews=new File(context.getCacheDir(),"protected_previews");
+            if(!previews.isDirectory()&&!previews.mkdirs())throw new IOException("无法建立预览缓存");
+            File[] old=previews.listFiles();
+            if(old!=null)for(File d:old)if(System.currentTimeMillis()-d.lastModified()>86400000L){
+                File[] children=d.listFiles();if(children!=null)for(File c:children)c.delete();d.delete();
+            }
+            File dir=new File(previews,java.util.UUID.randomUUID().toString());
+            if(!dir.mkdir())throw new IOException("无法建立预览缓存");
+            file=new File(dir,original.getName());
+            try(InputStream in=input(original);OutputStream out=new FileOutputStream(file)) {
+                byte[] b=new byte[65536];long total=0;int n;
+                while((n=in.read(b))!=-1){
+                    total+=n;if(total>256L*1024*1024)throw new IOException("受保护文件的外部预览上限为 256MB");
+                    out.write(b,0,n);
+                }
+            }catch(Exception e){file.delete();dir.delete();throw e;}
+        }
+        if(!file.canRead())throw new IOException("没有权限读取此文件");
+        Uri uri=FileProvider.getUriForFile(context,context.getPackageName()+".fileshare",file);
+        return new Intent(Intent.ACTION_VIEW).setDataAndType(uri,mimeType(original.getName()))
+            .setClipData(ClipData.newRawUri("CFM 文件",uri))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    }
 
     /** Actual Android OS share chooser. Apps such as WeChat and QQ may appear
      * only if installed and capable of accepting the selected file MIME type.
@@ -333,8 +392,20 @@ final class PcNativeFileApi {
 
     private static JSONObject list(String path)throws Exception {
         File dir=inside(path);
-        if(!dir.isDirectory())throw new IOException("文件夹不存在或无读取权限："+dir.getPath());
-        File[] files=sorted(dir);
+        if(isProtectedPath(path) && protectedService!=null)
+            return new JSONObject(protectedReader().listJson(dir.getPath()));
+        if(!dir.isDirectory()) {
+            if(isProtectedPath(path))return new JSONObject(protectedReader().listJson(dir.getPath()));
+            throw new IOException("文件夹不存在或无读取权限："+dir.getPath());
+        }
+        File[] files;
+        try { files=sorted(dir); }
+        catch(IOException denied) {
+            if(!isProtectedPath(path))throw denied;
+            return new JSONObject(protectedReader().listJson(dir.getPath()));
+        }
+        if(files.length==0 && isProtectedPath(path) && protectedService==null)
+            throw new IOException("该目录可能被系统隐藏，请通过底部 ⋮ 连接 Shizuku 后重试");
         JSONArray items=new JSONArray();
         for(int i=0;i<Math.min(files.length,MAX_LIST);i++) {
             File f=files[i];
@@ -419,10 +490,10 @@ final class PcNativeFileApi {
 
     private static JSONObject read(String path)throws Exception {
         File file=safeFile(path);
-        textFile(file);
+        if(!isProtectedPath(path))textFile(file);
         if(file.length()>MAX_TEXT)throw new IOException("纯文本编辑上限为 2MB");
         ByteArrayOutputStream output=new ByteArrayOutputStream();
-        try(InputStream in=new FileInputStream(file)) {
+        try(InputStream in=input(file)) {
             byte[] chunk=new byte[8192];int n;
             while((n=in.read(chunk))!=-1) {
                 if(output.size()+n>MAX_TEXT)throw new IOException("文件过大");
@@ -444,10 +515,12 @@ final class PcNativeFileApi {
         String suffix=extension(file.getName());
         return new JSONObject().put("path",file.getAbsolutePath())
             .put("name",file.getName()).put("text",text).put("bom",bom)
+            .put("readOnly",isProtectedPath(path))
             .put("html",suffix.equals(".htm")||suffix.equals(".html"));
     }
 
     private static JSONObject save(String path,String text,boolean bom)throws Exception {
+        if(isProtectedPath(path))throw new IOException("受保护目录当前为只读，不能保存修改");
         File file=safeFile(path);
         textFile(file);
         byte[] bytes=text.getBytes(StandardCharsets.UTF_8);

@@ -64,6 +64,7 @@ function mockAction(action,args){
     items:(fixture[args.path]||[]).map(item=>({
       ...item,modified:"2026-11-11 11:11",isLink:false
     })),truncated:false};
+  case "openWith":return {message:"已打开系统打开方式菜单"};
   case "icons":return {icons:Object.fromEntries((args.paths||[])
     .filter(p=>p.endsWith(".apk"))
     .map(p=>[p,"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Yf7fXsAAAAASUVORK5CYII="]))};
@@ -244,6 +245,17 @@ async function test(label,fn){
     [...menu.querySelectorAll("button")].find(e=>e.textContent.includes("空文件")).click();
     await waitFor(()=>requests.some(x=>x.action==="newFile"));
     await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
+  });
+  await test("non-text files reach Android openWith instead of being blocked",async()=>{
+    for(const name of ["photo.jpg","book.pdf","video.mp4","sample.apk","unknown.bin"]){
+      const before=requests.length;
+      const filePath=downloads+"/"+name;
+      if(!fixture[downloads].some(x=>x.path===filePath))fixture[downloads].push({name,isDir:false,path:filePath,size:10});
+      await setPath(0,downloads);
+      const row=[...w.document.querySelectorAll("#entries0 .entry[data-path]")].find(x=>x.dataset.path===filePath);
+      row.dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
+      await waitFor(()=>requests.slice(before).some(x=>x.action==="openWith"&&x.args.path===filePath));
+    }
   });
   await test("HTML and archive buttons exist",async()=>{
     assert.ok(w.document.querySelector("#html-button"));

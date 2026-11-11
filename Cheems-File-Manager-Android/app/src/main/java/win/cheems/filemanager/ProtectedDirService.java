@@ -49,5 +49,48 @@ public final class ProtectedDirService extends IProtectedDir.Stub {
             throw new RemoteException(ex.getMessage());
         }
     }
+    // Canonical containment is checked in the privileged process, never trusted
+    // from the WebView/client. No write-capable descriptors are returned.
+    private File verifiedFile(String path) throws IOException {
+        if(path==null)throw new IOException("路径不能为空");
+        File raw=new File(path);
+        File file=raw.getCanonicalFile();
+        verifiedFolder(file.getParent());
+        if(Files.isSymbolicLink(raw.toPath()) || !file.isFile())
+            throw new IOException("不是普通文件或不允许访问链接");
+        return file;
+    }
+    @Override public android.os.ParcelFileDescriptor openRead(String path)
+            throws RemoteException {
+        try { return android.os.ParcelFileDescriptor.open(verifiedFile(path),
+            android.os.ParcelFileDescriptor.MODE_READ_ONLY); }
+        catch(Exception e){throw new RemoteException(e.getMessage());}
+    }
+    @Override public String listJson(String path) throws RemoteException {
+        try {
+            File dir=verifiedFolder(path);
+            File[] entries=dir.listFiles();
+            if(entries==null)throw new IOException("系统拒绝 Shizuku 读取该目录");
+            Arrays.sort(entries,Comparator.comparing((File f)->!f.isDirectory())
+                .thenComparing(f->f.getName().toLowerCase(Locale.ROOT)));
+            org.json.JSONArray items=new org.json.JSONArray();
+            int bytes=0, count=0;
+            for(File f:entries){
+                if(Files.isSymbolicLink(f.toPath()))continue;
+                org.json.JSONObject item=new org.json.JSONObject()
+                    .put("name",f.getName()).put("path",f.getAbsolutePath())
+                    .put("isDir",f.isDirectory()).put("isLink",false)
+                    .put("size",f.isDirectory()?0:f.length())
+                    .put("modified",new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm",
+                        Locale.getDefault()).format(new java.util.Date(f.lastModified())));
+                bytes+=item.toString().length()*2;
+                if(bytes>300000 || count>=2000)break;
+                items.put(item);count++;
+            }
+            return new org.json.JSONObject().put("path",dir.getPath())
+                .put("parent",dir.getParent()).put("items",items)
+                .put("truncated",count<entries.length).put("readOnly",true).toString();
+        }catch(Exception e){throw new RemoteException(e.getMessage());}
+    }
     @Override public void destroy() { System.exit(0); }
 }

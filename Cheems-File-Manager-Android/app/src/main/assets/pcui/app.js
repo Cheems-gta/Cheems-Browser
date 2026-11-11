@@ -596,13 +596,14 @@ function closeEditor() {
 }
 async function openItem(item) {
   if(item.isDir) return guarded(()=>navigate(state.active,item.path));
+  if(isAndroidBuild() && /\.apk$/i.test(item.name))
+    return guarded(()=>call("openWith",{path:item.path}));
   if(isArchive(item.name)) {
     toast("已选中压缩包，使用顶部「解压」或右键菜单提取");
     return;
   }
   if(!isText(item.name)) {
-    toast("这不是可直接编辑的纯文本文件；为安全起见 V0.1 不会执行文件。");
-    return;
+    return guarded(()=>call("openWith",{path:item.path}));
   }
   return openEditor(item.path);
 }
@@ -612,7 +613,9 @@ async function openEditor(path) {
     currentEditor=data;
     $("#editor-file").textContent=data.path;
     $("#editor-text").value=data.text;
-    $("#editor-mode").textContent=data.bom?"UTF-8（带 BOM）":"UTF-8";
+    $("#editor-text").readOnly=!!data.readOnly;
+    $("#save-editor").disabled=!!data.readOnly;
+    $("#editor-mode").textContent=(data.bom?"UTF-8（带 BOM）":"UTF-8")+(data.readOnly?" · 只读":"");
     $("#editor-overlay").classList.remove("hidden");
     $("#preview-button").classList.toggle("hidden",!data.html);
     state.previewVisible=false;

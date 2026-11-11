@@ -41,6 +41,8 @@ public final class PcPreviewActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private WebView web;
+    private ProtectedAccess protectedAccess;
+    private String pendingProtectedPath;
     private boolean askedPermission;
     private boolean authorizedOnLastResume;
 
@@ -182,6 +184,14 @@ public final class PcPreviewActivity extends Activity {
                 }
             }
         });
+        protectedAccess=new ProtectedAccess(this,()->{
+            if(web!=null && pendingProtectedPath!=null){
+                String path=pendingProtectedPath;pendingProtectedPath=null;
+                web.evaluateJavascript("guarded(()=>navigate(state.active,"+
+                    JSONObject.quote(path)+"))",null);
+            }
+        });
+        addNavigationButton(bottom,"⋮","Shizuku 连接与目录授权",()->protectedAccess.show());
         web.loadUrl(BASE+"index.html");
 
         authorizedOnLastResume = canAccess();
@@ -273,6 +283,25 @@ public final class PcPreviewActivity extends Activity {
                     String action=req.getString("action");
                     JSONObject arguments=req.optJSONObject("args");
                     if(arguments==null)arguments=new JSONObject();
+                    if ("openWith".equals(action)) {
+                        final int replyId=id;
+                        // Resolve/copy protected previews off the UI thread.
+                        final Intent view=PcNativeFileApi.openIntent(PcPreviewActivity.this,arguments);
+                        main.post(()->{
+                            try {
+                                if(view.resolveActivity(getPackageManager())==null)
+                                    throw new java.io.IOException("没有能打开此类型文件的应用，请安装对应查看器，或长按选择其他操作");
+                                startActivity(Intent.createChooser(view,"选择打开方式"));
+                                send(new JSONObject().put("id",replyId).put("ok",true)
+                                    .put("data",new JSONObject().put("message","已打开系统打开方式菜单")));
+                            }catch(Exception e){
+                                try{send(new JSONObject().put("id",replyId).put("ok",false)
+                                    .put("error",e.getMessage()==null?"无法打开文件":e.getMessage()));}
+                                catch(Exception ignored){}
+                            }
+                        });
+                        return;
+                    }
                     if ("share".equals(action)) {
                         // Android chooser must be launched on the main thread.
                         final int replyId = id;
@@ -297,8 +326,17 @@ public final class PcPreviewActivity extends Activity {
                         });
                         return;
                     }
-                    JSONObject data=PcNativeFileApi.execute(
-                        PcPreviewActivity.this, action, arguments);
+                    JSONObject data;
+                    try {
+                        data=PcNativeFileApi.execute(PcPreviewActivity.this,action,arguments);
+                    }catch(Exception failure){
+                        if("list".equals(action) && PcNativeFileApi.isProtectedPath(arguments.optString("path"))
+                                && PcNativeFileApi.protectedService==null){
+                            final String target=arguments.optString("path");
+                            main.post(()->{pendingProtectedPath=target;protectedAccess.show();});
+                        }
+                        throw failure;
+                    }
                     JSONObject reply=new JSONObject()
                         .put("id",id).put("ok",true).put("data",data);
                     send(reply);
@@ -328,6 +366,7 @@ public final class PcPreviewActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if(protectedAccess!=null)protectedAccess.close();
         worker.shutdownNow();
         if (web != null) {
             web.removeJavascriptInterface("AndroidFileApi");

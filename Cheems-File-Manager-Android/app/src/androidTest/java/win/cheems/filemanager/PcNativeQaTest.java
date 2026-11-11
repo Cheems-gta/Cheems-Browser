@@ -26,6 +26,62 @@ import java.util.UUID;
  */
 @RunWith(AndroidJUnit4.class)
 public final class PcNativeQaTest {
+    @Test public void openFilesUseReadOnlyContentUrisAndCorrectMime() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File dir=new File(Environment.getExternalStorageDirectory(),"CFM_QA_"+UUID.randomUUID());
+        assertTrue(dir.mkdirs());
+        try {
+            String[][] types={{"photo.JPG","image/jpeg"},{"book.pdf","application/pdf"},
+                {"app.apk","application/vnd.android.package-archive"},
+                {"file.unknownextension","application/octet-stream"}};
+            for(String[] type:types){
+                File f=new File(dir,type[0]);
+                try(FileOutputStream out=new FileOutputStream(f)){out.write(65);}
+                Intent intent=PcNativeFileApi.openIntent(ctx,arg("path",f.getPath()));
+                assertEquals(Intent.ACTION_VIEW,intent.getAction());
+                assertEquals("content",intent.getData().getScheme());
+                assertEquals(type[1],intent.getType());
+                assertTrue((intent.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0);
+                assertEquals(0,intent.getFlags()&Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                assertNotNull(intent.getClipData());
+                try(java.io.InputStream in=ctx.getContentResolver().openInputStream(intent.getData())){
+                    assertEquals(65,in.read());
+                }
+            }
+        }finally{deleteSafe(dir);}
+    }
+    @Test public void protectedServiceRejectsTraversalAndUnrelatedPaths() throws Exception {
+        ProtectedDirService service=new ProtectedDirService();
+        for(String path:new String[]{"/data/local/tmp","/storage/emulated/0/Download",
+                "/storage/emulated/0/Android/data/../../Download"}){
+            try{service.listJson(path);fail("Must reject "+path);}
+            catch(android.os.RemoteException expected){}
+        }
+        try{service.openRead("/etc/hosts");fail("Must reject unrelated file");}
+        catch(android.os.RemoteException expected){}
+        assertFalse(PcNativeFileApi.isProtectedPath("/storage/emulated/0/Android/database"));
+        assertTrue(PcNativeFileApi.isProtectedPath("/storage/emulated/0/Android/data"));
+    }
+    @Test public void protectedServiceCanListAndReadOwnExternalFixture() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File dir=new File(ctx.getExternalFilesDir(null),"CFM_QA_"+UUID.randomUUID());
+        assertTrue(dir.mkdirs());
+        try {
+            File f=new File(dir,"hello.txt");
+            try(FileOutputStream out=new FileOutputStream(f)){out.write("hello".getBytes(StandardCharsets.UTF_8));}
+            ProtectedDirService service=new ProtectedDirService();
+            JSONObject listing=new JSONObject(service.listJson(dir.getPath()));
+            assertTrue(listing.getBoolean("readOnly"));
+            assertEquals("hello.txt",listing.getJSONArray("items").getJSONObject(0).getString("name"));
+            try(java.io.InputStream in=new android.os.ParcelFileDescriptor.AutoCloseInputStream(service.openRead(f.getPath()))){
+                assertEquals('h',in.read());
+            }
+            PcNativeFileApi.protectedService=service;
+            assertEquals(1,run(ctx,"list",arg("path",dir.getPath())).getJSONArray("items").length());
+            assertTrue(run(ctx,"read",arg("path",f.getPath())).getBoolean("readOnly"));
+        }finally{PcNativeFileApi.protectedService=null;deleteSafe(dir);}
+    }
+
     private static JSONObject arg(String key,Object value) throws Exception {
         return new JSONObject().put(key,value);
     }
