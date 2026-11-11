@@ -9,8 +9,11 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.DocumentsContract;
+import android.os.Environment;
+import android.os.StatFs;
+import android.provider.Settings;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,515 +23,499 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import androidx.documentfile.provider.DocumentFile;
+
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Locale;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
-    private static final int CHOOSE_LEFT = 101;
-    private static final int CHOOSE_RIGHT = 102;
-    private static final int BACK = Color.rgb(10, 19, 34);
-    private static final int PANEL = Color.rgb(21, 39, 61);
-    private static final int LIGHT = Color.rgb(220, 242, 255);
-
-    private final Pane left = new Pane("左侧工作区", "left");
-    private final Pane right = new Pane("右侧工作区", "right");
+    private static final int BACK = Color.rgb(18, 18, 18);
+    private static final int PANEL = Color.rgb(43, 43, 43);
+    private static final int LIGHT = Color.rgb(232, 232, 232);
+    private static final int MUTED = Color.rgb(169, 169, 169);
+    private final File root = Environment.getExternalStorageDirectory();
+    private final Pane left = new Pane("左", "left");
+    private final Pane right = new Pane("右", "right");
     private Pane active = left;
-    private LinearLayout paneHost;
-    private TextView status;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final SimpleDateFormat stamp = new SimpleDateFormat("yy-MM-dd HH:mm", Locale.getDefault());
+
+    private LinearLayout host, fileArea, tools, notice;
+    private TextView pathView, counts;
+    private boolean hadAccess = false;
 
     private static final class Pane {
-        final String label;
-        final String key;
-        DocumentFile root;
-        DocumentFile current;
-        DocumentFile selected;
+        final String title, pref;
+        File folder;
+        File selected;
         LinearLayout rows;
-        TextView title;
-        TextView path;
-        LinearLayout panel;
-        Pane(String label, String key) { this.label = label; this.key = key; }
+        TextView dirLabel;
+        Pane(String title, String pref) { this.title = title; this.pref = pref; }
     }
 
-    @Override public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    @Override public void onCreate(Bundle state) {
+        super.onCreate(state);
         getWindow().setStatusBarColor(BACK);
-        getWindow().setNavigationBarColor(BACK);
-        buildUi();
-        restore(left);
-        restore(right);
-        refresh(left);
-        refresh(right);
-        setStatus("先用“选目录”授权两个文件夹；点击文件进行选择。");
+        getWindow().setNavigationBarColor(Color.rgb(35,35,35));
+        left.folder = restore(left);
+        right.folder = restore(right);
+        createUi();
+        renderPermissionState();
     }
 
-    private int dp(float value) { return (int)(getResources().getDisplayMetrics().density * value + 0.5f); }
-
-    private GradientDrawable bg(int color, int border, int radius) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
-        drawable.setCornerRadius(dp(radius));
-        drawable.setStroke(dp(1), border);
-        return drawable;
+    @Override protected void onResume() {
+        super.onResume();
+        if (host != null) renderPermissionState();
     }
 
-    private TextView text(String content, int size, int color) {
+    @Override protected void onDestroy() {
+        io.shutdown();
+        super.onDestroy();
+    }
+
+    private int dp(float n) { return (int)(n * getResources().getDisplayMetrics().density + .5f); }
+    private GradientDrawable color(int c) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(c); d.setCornerRadius(dp(6));
+        return d;
+    }
+    private TextView text(String s, int size, int color) {
         TextView view = new TextView(this);
-        view.setText(content);
-        view.setTextColor(color);
-        view.setTextSize(size);
+        view.setText(s); view.setTextColor(color); view.setTextSize(size);
         return view;
     }
-
-    private Button button(String title, Runnable action) {
-        Button button = new Button(this);
-        button.setText(title);
-        button.setTextSize(12);
-        button.setTextColor(Color.WHITE);
-        button.setAllCaps(false);
-        button.setBackground(bg(Color.rgb(40, 81, 111), Color.rgb(92, 145, 170), 12));
-        button.setPadding(dp(9), dp(4), dp(9), dp(4));
-        button.setOnClickListener(v -> {
-            try { action.run(); } catch (Exception ex) { error(ex); }
+    private Button btn(String label, Runnable click) {
+        Button b = new Button(this);
+        b.setText(label); b.setAllCaps(false);
+        b.setTextColor(Color.WHITE); b.setTextSize(14);
+        b.setBackground(color(Color.rgb(49,49,49)));
+        b.setOnClickListener(v -> {
+            try { click.run(); } catch (Exception e) { fail(e); }
         });
-        return button;
+        return b;
+    }
+    private void addTool(String name, Runnable action) {
+        Button b = btn(name, action);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(62), dp(48));
+        p.setMargins(dp(3),0,dp(3),0);
+        tools.addView(b,p);
+    }
+    private void createUi() {
+        host = new LinearLayout(this);
+        host.setOrientation(LinearLayout.VERTICAL);
+        host.setBackgroundColor(BACK);
+        setContentView(host);
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        heading.setPadding(dp(18),dp(9),dp(14),dp(10));
+        host.addView(heading);
+        pathView = text(root.getAbsolutePath() + "/", 25, LIGHT);
+        pathView.setSingleLine(true);
+        pathView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        pathView.setOnClickListener(v -> promptPath());
+        heading.addView(pathView);
+        counts = text("Cheems File Manager · v0.2", 12, MUTED);
+        heading.addView(counts);
+
+        fileArea = new LinearLayout(this);
+        fileArea.setOrientation(LinearLayout.HORIZONTAL);
+        host.addView(fileArea, new LinearLayout.LayoutParams(-1,0,1));
+        createPane(left);
+        createPane(right);
+
+        notice = new LinearLayout(this);
+        notice.setOrientation(LinearLayout.VERTICAL);
+        notice.setPadding(dp(24),dp(30),dp(24),dp(10));
+        host.addView(notice, new LinearLayout.LayoutParams(-1,0,1));
+
+        tools = new LinearLayout(this);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        HorizontalScrollView bottomScroll = new HorizontalScrollView(this);
+        bottomScroll.setHorizontalScrollBarEnabled(false);
+        bottomScroll.addView(tools);
+        bottomScroll.setBackgroundColor(Color.rgb(39,39,39));
+        host.addView(bottomScroll,new LinearLayout.LayoutParams(-1,dp(57)));
+
+        addTool("‹ 返回", this::goBack);
+        addTool("↑ 上层", this::up);
+        addTool("⇄ 复制", this::copySelected);
+        addTool("＋ 新建", this::newFolder);
+        addTool("✎ 改名", this::renameSelected);
+        addTool("☰ 编辑", this::editSelected);
+        addTool("⟳ 刷新", this::refreshBoth);
+        addTool("⋮ 权限", this::permissionInfo);
     }
 
-    private void addTool(LinearLayout bar, String name, Runnable action) {
-        Button b = button(name, action);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, dp(44));
-        params.setMargins(dp(4), dp(2), dp(4), dp(2));
-        bar.addView(b, params);
-    }
-
-    private void buildUi() {
+    private void createPane(Pane pane) {
         LinearLayout frame = new LinearLayout(this);
         frame.setOrientation(LinearLayout.VERTICAL);
-        frame.setBackgroundColor(BACK);
-        frame.setPadding(dp(9), dp(10), dp(9), dp(6));
-        setContentView(frame);
+        frame.setBackgroundColor(PANEL);
+        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(0,-1,1);
+        fp.setMargins(dp(1),0,dp(1),0);
+        fileArea.addView(frame, fp);
 
-        TextView logo = text("CHEEMS  /  FILE MANAGER", 19, Color.WHITE);
-        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        logo.setPadding(dp(7), dp(4), dp(7), dp(7));
-        frame.addView(logo);
+        pane.dirLabel = text(pane.title + " · /",11, MUTED);
+        pane.dirLabel.setSingleLine(true);
+        pane.dirLabel.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        pane.dirLabel.setPadding(dp(9),dp(5),dp(5),dp(6));
+        pane.dirLabel.setOnClickListener(v -> selectPane(pane));
+        frame.addView(pane.dirLabel);
 
-        TextView sub = text("V0.1 · Android 原生双栏 · 离线运行", 11, Color.rgb(141, 190, 212));
-        sub.setPadding(dp(7), 0, 0, dp(9));
-        frame.addView(sub);
-
-        HorizontalScrollView horizontal = new HorizontalScrollView(this);
-        horizontal.setHorizontalScrollBarEnabled(false);
-        LinearLayout tools = new LinearLayout(this);
-        tools.setOrientation(LinearLayout.HORIZONTAL);
-        horizontal.addView(tools);
-        frame.addView(horizontal);
-
-        addTool(tools, "⇄ 复制到另一栏", this::copySelected);
-        addTool(tools, "＋ 新建文件夹", this::newFolder);
-        addTool(tools, "✎ 重命名", this::renameSelected);
-        addTool(tools, "▤ 文本编辑", this::editSelected);
-        addTool(tools, "↻ 刷新", () -> { refresh(left); refresh(right); });
-        addTool(tools, "帮助", this::showHelp);
-
-        paneHost = new LinearLayout(this);
-        frame.addView(paneHost, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        setupPane(left, CHOOSE_LEFT);
-        setupPane(right, CHOOSE_RIGHT);
-        useOrientation();
-
-        status = text("", 11, Color.rgb(170, 208, 231));
-        status.setPadding(dp(7), dp(6), dp(7), dp(7));
-        frame.addView(status);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        pane.rows = new LinearLayout(this);
+        pane.rows.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(pane.rows);
+        frame.addView(scroll, new LinearLayout.LayoutParams(-1,0,1));
     }
 
-    private void setupPane(Pane p, int requestCode) {
-        p.panel = new LinearLayout(this);
-        p.panel.setOrientation(LinearLayout.VERTICAL);
-        p.panel.setPadding(dp(10), dp(9), dp(10), dp(9));
-        p.panel.setBackground(bg(PANEL, Color.rgb(56, 97, 124), 16));
-        p.panel.setOnClickListener(v -> activate(p));
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        p.title = text(p.label, 14, LIGHT);
-        p.title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        header.addView(p.title, new LinearLayout.LayoutParams(0, dp(42), 1));
-
-        Button choose = button("选目录", () -> chooseFolder(requestCode));
-        header.addView(choose, new LinearLayout.LayoutParams(dp(78), dp(39)));
-        Button up = button("↑", () -> goUp(p));
-        LinearLayout.LayoutParams upParams = new LinearLayout.LayoutParams(dp(43), dp(39));
-        upParams.setMargins(dp(5), 0, 0, 0);
-        header.addView(up, upParams);
-        p.panel.addView(header);
-
-        p.path = text("尚未选择文件夹", 11, Color.rgb(150, 193, 215));
-        p.path.setMaxLines(2);
-        p.path.setPadding(0, 0, 0, dp(7));
-        p.panel.addView(p.path);
-
-        ScrollView scroller = new ScrollView(this);
-        scroller.setFillViewport(false);
-        p.rows = new LinearLayout(this);
-        p.rows.setOrientation(LinearLayout.VERTICAL);
-        scroller.addView(p.rows);
-        p.panel.addView(scroller, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+    private boolean canAccess() {
+        return android.os.Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager();
     }
 
-    private void useOrientation() {
-        boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
-        paneHost.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        paneHost.removeAllViews();
-        for (Pane p : Arrays.asList(left, right)) {
-            LinearLayout.LayoutParams lp = landscape
-                ? new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-                : new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-            lp.setMargins(dp(3), dp(5), dp(3), dp(5));
-            paneHost.addView(p.panel, lp);
+    private void renderPermissionState() {
+        boolean granted = canAccess();
+        fileArea.setVisibility(granted ? View.VISIBLE : View.GONE);
+        notice.setVisibility(granted ? View.GONE : View.VISIBLE);
+        if (granted) {
+            if (!hadAccess) {
+                left.folder = restore(left);
+                right.folder = restore(right);
+            }
+            refreshBoth();
+        } else {
+            notice.removeAllViews();
+            TextView title = text("允许访问共享存储文件",22,LIGHT);
+            title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+            notice.addView(title);
+            TextView desc = text(
+                "\nCFM 是本地文件管理器，需要访问你自己手机的共享存储。\n\n"
+                + "只需要通过 Android 系统设置授权一次，之后打开直接显示文件；"
+                + "授权也可以随时在系统设置里撤销。\n\n"
+                + "注意：这不是 ROOT，Android/data 等受保护目录仍可能无法访问。\n",
+                15, MUTED);
+            notice.addView(desc);
+            Button allow = btn("前往系统设置 · 授权一次",this::requestFilesPermission);
+            notice.addView(allow,new LinearLayout.LayoutParams(-1,dp(54)));
+        }
+        hadAccess = granted;
+    }
+
+    private void requestFilesPermission() {
+        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+            Uri.parse("package:" + getPackageName()));
+        try { startActivity(intent); }
+        catch (Exception e) {
+            startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
         }
     }
 
-    @Override public void onConfigurationChanged(Configuration config) {
-        super.onConfigurationChanged(config);
-        useOrientation();
+    private void permissionInfo() {
+        new AlertDialog.Builder(this).setTitle("CFM v0.2 · 文件权限")
+            .setMessage("本版使用 Android 官方“所有文件访问”授权。\n"
+                + "只需授权一次，除非你卸载应用、清除数据或在系统设置中撤销权限。\n\n"
+                + "无需 ROOT，不依赖 Shizuku。Android 13 及以上的 Shizuku 兼容方案会另行开发。"
+                + "\n\n注意：授权不等于拥有访问其他应用私有目录的权限。")
+            .setNegativeButton("取消",null)
+            .setPositiveButton("打开权限设置",(d,w)->requestFilesPermission()).show();
     }
 
-    private void activate(Pane p) {
+    private File restore(Pane pane) {
+        String path = getPreferences(MODE_PRIVATE).getString(pane.pref,root.getAbsolutePath());
+        File candidate = new File(path);
+        return insideRoot(candidate) && candidate.isDirectory() ? candidate : root;
+    }
+
+    private boolean insideRoot(File file) {
+        try {
+            String base = root.getCanonicalPath();
+            String test = file.getCanonicalPath();
+            return test.equals(base) || test.startsWith(base + File.separator);
+        } catch (IOException e) { return false; }
+    }
+
+    private void selectPane(Pane p) {
         active = p;
-        left.title.setText(left.label + (p == left ? "  ●" : ""));
-        right.title.setText(right.label + (p == right ? "  ●" : ""));
-    }
-
-    private void chooseFolder(int requestCode) {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(intent, requestCode);
-    }
-
-    @Override @SuppressWarnings("deprecation")
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        if (requestCode != CHOOSE_LEFT && requestCode != CHOOSE_RIGHT) return;
+        if (pathView == null || counts == null) return;
+        pathView.setText(active.folder.getAbsolutePath().replaceAll("/+$","") + "/");
+        int dirs=0, files=0;
+        File[] entries=active.folder.listFiles();
+        if (entries != null) for (File f: entries) { if(f.isDirectory()) dirs++; else files++; }
         try {
-            Uri uri = data.getData();
-            int flags = data.getFlags() &
-                (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            getContentResolver().takePersistableUriPermission(uri, flags);
-            Pane pane = requestCode == CHOOSE_LEFT ? left : right;
-            pane.root = DocumentFile.fromTreeUri(this, uri);
-            pane.current = pane.root;
-            pane.selected = null;
-            getPreferences(MODE_PRIVATE).edit().putString(pane.key, uri.toString()).apply();
-            activate(pane);
-            refresh(pane);
-            setStatus("文件夹授权成功：" + pane.current.getName());
-        } catch (Exception ex) { error(ex); }
+            StatFs stat = new StatFs(root.getAbsolutePath());
+            double used=(double)(stat.getTotalBytes()-stat.getAvailableBytes())/1073741824.0;
+            double total=(double)stat.getTotalBytes()/1073741824.0;
+            counts.setText("文件夹: "+dirs+"  文件: "+files+"  存储: "
+                +String.format(Locale.getDefault(),"%.1f/%.1fG",used,total));
+        } catch (Exception e) {
+            counts.setText("文件夹: "+dirs+"  文件: "+files+"  · CFM v0.2");
+        }
+        left.dirLabel.setText((active==left?"● ":"  ")+left.folder.getAbsolutePath());
+        right.dirLabel.setText((active==right?"● ":"  ")+right.folder.getAbsolutePath());
     }
 
-    private void restore(Pane p) {
-        String stored = getPreferences(MODE_PRIVATE).getString(p.key, null);
-        if (stored == null) return;
-        try {
-            p.root = DocumentFile.fromTreeUri(this, Uri.parse(stored));
-            p.current = p.root;
-        } catch (Exception ex) {
-            p.root = null;
-            p.current = null;
-        }
-    }
-
-    private void goUp(Pane p) {
-        activate(p);
-        if (p.current == null || p.root == null || p.current.getUri().equals(p.root.getUri())) {
-            setStatus("已到授权目录顶部；可重新选择目录。");
-            return;
-        }
-        DocumentFile parent = p.current.getParentFile();
-        if (parent != null) p.current = parent;
-        p.selected = null;
-        refresh(p);
+    private void refreshBoth() {
+        if (!canAccess()) return;
+        refresh(left);
+        refresh(right);
+        selectPane(active);
     }
 
     private void refresh(Pane p) {
         p.rows.removeAllViews();
-        p.selected = null;
-        if (p.current == null) {
-            labelRow(p, "点击右上角“选目录”选择授权文件夹。");
-            p.path.setText("未授权");
+        p.selected=null;
+        File[] arr=p.folder.listFiles();
+        if (arr==null) {
+            rowInfo(p,"该目录不可访问（系统权限限制）");
             return;
         }
-        try {
-            p.path.setText("📂 " + p.current.getName());
-            DocumentFile[] files = p.current.listFiles();
-            Arrays.sort(files, Comparator
-                .comparing((DocumentFile f) -> !f.isDirectory())
-                .thenComparing(f -> f.getName() == null ? "" : f.getName().toLowerCase(Locale.ROOT)));
-            if (files.length == 0) labelRow(p, "这个文件夹是空的。");
-            int limit = Math.min(files.length, 300);
-            for (int i = 0; i < limit; i++) addItem(p, files[i]);
-            if (files.length > limit) labelRow(p, "已显示前 300 项，暂不支持超大目录。");
-        } catch (Exception ex) {
-            labelRow(p, "目录读取失败；请重新选择目录。");
-            p.path.setText("读取失败");
-            setStatus("文件夹读取异常：" + ex.getMessage());
-        }
-        activate(active);
+        Arrays.sort(arr,Comparator.comparing((File f)->!f.isDirectory())
+            .thenComparing(f->f.getName().toLowerCase(Locale.ROOT)));
+        if(arr.length==0) rowInfo(p,"文件夹为空");
+        for(int i=0;i<Math.min(arr.length,400);i++) addFileRow(p,arr[i]);
+        if(arr.length>400) rowInfo(p,"仅显示前 400 项");
     }
 
-    private void labelRow(Pane p, String content) {
-        TextView label = text(content, 12, Color.rgb(176, 196, 216));
-        label.setPadding(dp(9), dp(13), dp(5), dp(12));
-        p.rows.addView(label);
+    private void rowInfo(Pane p,String s) {
+        TextView text=text(s,11,MUTED);
+        text.setPadding(dp(10),dp(15),dp(4),dp(10));
+        p.rows.addView(text);
     }
 
-    private void addItem(Pane p, DocumentFile item) {
-        boolean folder = item.isDirectory();
-        String name = item.getName() == null ? "(未命名)" : item.getName();
-        TextView row = text((folder ? "📁 " : "📄 ") + name, 13, Color.WHITE);
-        row.setSingleLine(true);
-        row.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(11), 0, dp(8), 0);
-        row.setBackground(bg(Color.rgb(27, 48, 72), Color.rgb(44, 69, 94), 9));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
-        lp.setMargins(0, 0, 0, dp(5));
-        p.rows.addView(row, lp);
+    private void addFileRow(Pane p,File file) {
+        boolean folder=file.isDirectory();
+        LinearLayout line=new LinearLayout(this);
+        line.setOrientation(LinearLayout.HORIZONTAL);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setBackgroundColor(PANEL);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(53));
+        p.rows.addView(line,lp);
+        TextView icon=text(folder ? "📁" : "📄",20,LIGHT);
+        icon.setGravity(Gravity.CENTER);
+        line.addView(icon,new LinearLayout.LayoutParams(dp(38),-1));
+        LinearLayout words=new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setGravity(Gravity.CENTER_VERTICAL);
+        line.addView(words,new LinearLayout.LayoutParams(0,-1,1));
+        TextView name=text(file.getName(),13,LIGHT);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(name);
+        TextView subtitle=text(stamp.format(new Date(file.lastModified())),11,MUTED);
+        words.addView(subtitle);
 
-        row.setOnClickListener(v -> {
-            activate(p);
-            if (folder) {
-                p.current = item;
+        View divider=new View(this);
+        divider.setBackgroundColor(Color.rgb(58,58,58));
+        p.rows.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+
+        line.setOnClickListener(v -> {
+            active=p;
+            if(folder) {
+                if(!file.canRead()) {
+                    selectPane(p);
+                    new AlertDialog.Builder(this).setMessage("此目录可能受到 Android 系统限制，无法读取。")
+                        .setPositiveButton("确定",null).show();
+                    return;
+                }
+                p.folder=file;
+                getPreferences(MODE_PRIVATE).edit().putString(p.pref,file.getAbsolutePath()).apply();
                 refresh(p);
             } else {
-                p.selected = item;
-                markSelected(p, row);
-                setStatus("已选择 " + name + "；可复制或文本编辑。");
+                p.selected=file;
+                mark(p,line);
             }
+            selectPane(p);
         });
-        row.setOnLongClickListener(v -> {
-            activate(p);
-            p.selected = item;
-            markSelected(p, row);
-            if (!folder) editSelected();
-            else setStatus("已选择文件夹 " + name + "，可复制到另一栏。");
+        line.setOnLongClickListener(v -> {
+            active=p;
+            p.selected=file;
+            mark(p,line);
+            selectPane(p);
             return true;
         });
     }
 
-    private void markSelected(Pane p, TextView selectedView) {
-        for (int i = 0; i < p.rows.getChildCount(); i++) {
-            View item = p.rows.getChildAt(i);
-            if (item instanceof TextView) item.setBackground(
-                bg(item == selectedView ? Color.rgb(45, 105, 139) :
-                   Color.rgb(27, 48, 72), Color.rgb(44, 69, 94), 9));
-        }
-    }
-
-    private void copySelected() {
-        if (active.selected == null) { setStatus("先点击一个文件，或长按一个文件夹。"); return; }
-        Pane destPane = active == left ? right : left;
-        if (destPane.current == null) { setStatus("另一栏还没有选择目标文件夹。"); return; }
-        DocumentFile source = active.selected;
-        DocumentFile destination = destPane.current;
-        if (source.isDirectory()) {
-            // Do not recursively copy a folder into itself or one of its children.
-            for (DocumentFile cursor = destination; cursor != null; cursor = cursor.getParentFile()) {
-                if (cursor.getUri().equals(source.getUri())) {
-                    setStatus("不能把文件夹复制到自身或子目录。");
-                    return;
-                }
+    private void mark(Pane p,View chosen) {
+        for(int i=0;i<p.rows.getChildCount();i++) {
+            View v=p.rows.getChildAt(i);
+            if(v instanceof LinearLayout) {
+                v.setBackgroundColor(v==chosen ? Color.rgb(57,87,104) : PANEL);
             }
         }
-        new AlertDialog.Builder(this)
-            .setTitle("确认复制")
-            .setMessage("复制 “" + source.getName() + "” 到 “" + destination.getName() +
-                        "”？\n首次体验请使用测试文件夹。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("复制", (d, which) -> {
-                try {
-                    recursiveCopy(source, destination, 0);
-                    refresh(left); refresh(right);
-                    setStatus("复制完成。");
-                } catch (Exception ex) { error(ex); }
-            }).show();
     }
 
-    private String uniqueName(DocumentFile dest, String base) {
-        if (dest.findFile(base) == null) return base;
-        int dot = base.lastIndexOf('.');
-        String stem = dot > 0 ? base.substring(0, dot) : base;
-        String ext = dot > 0 ? base.substring(dot) : "";
-        for (int i = 2; i < 10000; i++) {
-            String candidate = stem + " (" + i + ")" + ext;
-            if (dest.findFile(candidate) == null) return candidate;
-        }
-        throw new IllegalStateException("目标文件夹中存在过多同名文件。");
-    }
-
-    private void recursiveCopy(DocumentFile src, DocumentFile destFolder, int depth) throws Exception {
-        if (depth > 30) throw new IllegalStateException("文件夹层级过深，已停止。");
-        String name = uniqueName(destFolder, src.getName() == null ? "unknown" : src.getName());
-        if (src.isDirectory()) {
-            DocumentFile newFolder = destFolder.createDirectory(name);
-            if (newFolder == null) throw new IllegalStateException("创建目标文件夹失败：" + name);
-            for (DocumentFile child : src.listFiles()) recursiveCopy(child, newFolder, depth + 1);
+    private void navigate(Pane p, File folder) {
+        if (!insideRoot(folder) || !folder.isDirectory() || !folder.canRead()) {
+            new AlertDialog.Builder(this).setMessage("不能访问这个路径。")
+                .setPositiveButton("确定",null).show();
             return;
         }
-        if (!src.isFile()) throw new IllegalStateException("暂不支持此类型：" + name);
-        String mime = src.getType() == null ? "application/octet-stream" : src.getType();
-        DocumentFile newFile = destFolder.createFile(mime, name);
-        if (newFile == null) throw new IllegalStateException("创建目标文件失败：" + name);
-        try (InputStream input = getContentResolver().openInputStream(src.getUri());
-             OutputStream output = getContentResolver().openOutputStream(newFile.getUri(), "w")) {
-            if (input == null || output == null) throw new IllegalStateException("无法打开文件流。");
-            byte[] buffer = new byte[32768];
-            int length;
-            while ((length = input.read(buffer)) != -1) output.write(buffer, 0, length);
-        }
+        p.folder=folder;
+        getPreferences(MODE_PRIVATE).edit().putString(p.pref,folder.getAbsolutePath()).apply();
+        refresh(p);
+        selectPane(p);
     }
-
-    private void newFolder() {
-        if (active.current == null) { setStatus("请先选择一个文件夹。"); return; }
-        EditText edit = input("新文件夹");
-        new AlertDialog.Builder(this)
-            .setTitle("新建文件夹")
-            .setView(edit)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("创建", (d, which) -> {
-                try {
-                    String name = checkedName(edit.getText().toString());
-                    if (active.current.findFile(name) != null) throw new IllegalStateException("名称已经存在。");
-                    if (active.current.createDirectory(name) == null) throw new IllegalStateException("创建失败。");
-                    refresh(active);
-                } catch (Exception ex) { error(ex); }
-            }).show();
+    private void up() { File parent=active.folder.getParentFile(); if(parent!=null)navigate(active,parent); }
+    private void goBack() { up(); }
+    @Override public void onBackPressed() {
+        if(!active.folder.equals(root)) up(); else super.onBackPressed();
     }
-
-    private void renameSelected() {
-        if (active.selected == null) { setStatus("请先选择一个文件或文件夹。"); return; }
-        DocumentFile file = active.selected;
-        EditText edit = input(file.getName() == null ? "" : file.getName());
-        new AlertDialog.Builder(this)
-            .setTitle("重命名")
-            .setView(edit)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("保存", (d, which) -> {
-                try {
-                    String name = checkedName(edit.getText().toString());
-                    if (active.current.findFile(name) != null) throw new IllegalStateException("名称已经存在。");
-                    if (!file.renameTo(name)) throw new IllegalStateException("该目录提供方不支持重命名。");
-                    refresh(active);
-                } catch (Exception ex) { error(ex); }
-            }).show();
-    }
-
-    private EditText input(String initial) {
-        EditText edit = new EditText(this);
-        edit.setSingleLine(true);
-        edit.setText(initial);
-        edit.setSelectAllOnFocus(true);
-        edit.setPadding(dp(20), dp(15), dp(20), dp(15));
-        return edit;
-    }
-
-    private String checkedName(String value) {
-        String name = value.trim();
-        if (name.isEmpty() || name.equals(".") || name.equals("..") ||
-            name.contains("/") || name.contains("\\"))
-            throw new IllegalArgumentException("文件名不能为空，且不能包含路径分隔符。");
-        return name;
-    }
-
-    private void editSelected() {
-        if (active.selected == null || !active.selected.isFile()) {
-            setStatus("请先选择一个文本文件。");
-            return;
-        }
-        DocumentFile item = active.selected;
-        String name = item.getName() == null ? "" : item.getName();
-        String low = name.toLowerCase(Locale.ROOT);
-        if (!(low.endsWith(".txt") || low.endsWith(".json") || low.endsWith(".xml") ||
-              low.endsWith(".html") || low.endsWith(".css") || low.endsWith(".js") ||
-              low.endsWith(".java") || low.endsWith(".kt") || low.endsWith(".md") ||
-              low.endsWith(".ini") || low.endsWith(".cfg") || low.endsWith(".csv"))) {
-            setStatus("V0.1 只支持常见的 UTF-8 文本文件。");
-            return;
-        }
-        try {
-            byte[] content;
-            try (InputStream input = getContentResolver().openInputStream(item.getUri())) {
-                if (input == null) throw new IllegalStateException("读取失败。");
-                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-                byte[] buffer = new byte[4096];
-                int len;
-                while ((len = input.read(buffer)) != -1) {
-                    if (bytes.size() + len > 256 * 1024)
-                        throw new IllegalStateException("V0.1 只编辑 256KB 以下的文本文件。");
-                    bytes.write(buffer, 0, len);
-                }
-                content = bytes.toByteArray();
-            }
-
-            EditText field = new EditText(this);
-            field.setTypeface(Typeface.MONOSPACE);
-            field.setTextSize(12);
-            field.setGravity(Gravity.TOP | Gravity.START);
-            field.setMinLines(10);
-            field.setMaxLines(18);
-            field.setHorizontallyScrolling(true);
-            field.setInputType(InputType.TYPE_CLASS_TEXT |
-                InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-            field.setText(new String(content, java.nio.charset.StandardCharsets.UTF_8));
-            ScrollView wrap = new ScrollView(this);
-            wrap.addView(field);
-            new AlertDialog.Builder(this)
-                .setTitle("编辑 · " + name)
-                .setView(wrap)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("保存", (d, which) -> {
-                    try (OutputStream output = getContentResolver().openOutputStream(item.getUri(), "wt")) {
-                        if (output == null) throw new IllegalStateException("文件无法写入。");
-                        output.write(field.getText().toString().getBytes(
-                            java.nio.charset.StandardCharsets.UTF_8));
-                        output.flush();
-                        setStatus("已保存：" + name);
-                    } catch (Exception ex) { error(ex); }
-                }).show();
-        } catch (Exception ex) { error(ex); }
-    }
-
-    private void showHelp() {
-        new AlertDialog.Builder(this)
-            .setTitle("CFM Android V0.1")
-            .setMessage("① 左右分别点击“选目录”，授权两个测试文件夹。\n\n" +
-                        "② 点击文件夹进入；点击文件选中；长按文件夹可选中它。\n\n" +
-                        "③ 上方横向工具栏：复制、重命名、新建文件夹、编辑文本。\n\n" +
-                        "④ 竖屏上下双栏，横屏左右双栏。\n\n" +
-                        "基于 Android 的文件夹授权机制，不需要 ROOT，不读取未授权目录。" +
-                        "目前没有删除/移动功能，避免 V0.1 误操作重要资料。")
-            .setPositiveButton("了解", null)
+    private void promptPath() {
+        if(!canAccess()) return;
+        EditText field=new EditText(this);
+        field.setSingleLine(true);
+        field.setText(active.folder.getAbsolutePath());
+        field.setSelectAllOnFocus(true);
+        new AlertDialog.Builder(this).setTitle("打开路径")
+            .setMessage("可输入共享存储中的完整文件夹路径")
+            .setView(field).setNegativeButton("取消",null)
+            .setPositiveButton("进入",(d,w)->navigate(active,new File(field.getText().toString().trim())))
             .show();
     }
 
-    private void setStatus(String message) { if (status != null) status.setText(message); }
-    private void error(Exception ex) {
-        new AlertDialog.Builder(this).setTitle("操作失败")
-            .setMessage(ex.getMessage() == null ? ex.toString() : ex.getMessage())
-            .setPositiveButton("知道了", null).show();
+    private String safeName(String proposed) {
+        String name=proposed.trim();
+        if(name.isEmpty() || name.equals(".") || name.equals("..") ||
+            name.contains("/") || name.contains("\\") || name.indexOf('\0')>=0)
+            throw new IllegalArgumentException("文件名不合法");
+        return name;
+    }
+    private void newFolder() {
+        if(!canAccess()) return;
+        final Pane current=active;
+        EditText field=new EditText(this); field.setSingleLine(true);field.setText("新建文件夹");
+        new AlertDialog.Builder(this).setTitle("新建文件夹").setView(field)
+            .setNegativeButton("取消",null)
+            .setPositiveButton("创建",(d,w)->{
+                try {
+                    File dest=new File(current.folder,safeName(field.getText().toString()));
+                    if(dest.exists() || !dest.mkdir()) throw new IOException("文件夹存在或创建失败");
+                    refresh(current);
+                    selectPane(current);
+                }catch(Exception e){fail(e);}
+            }).show();
+    }
+    private void renameSelected() {
+        if(active.selected==null){say("长按文件夹或点击文件后才能重命名");return;}
+        final Pane p=active; final File original=p.selected;
+        EditText field=new EditText(this);field.setSingleLine(true);field.setText(original.getName());
+        new AlertDialog.Builder(this).setTitle("重命名").setView(field)
+            .setNegativeButton("取消",null).setPositiveButton("保存",(d,w)->{
+                try {
+                    File target=new File(original.getParentFile(),safeName(field.getText().toString()));
+                    if(target.exists() || !original.renameTo(target))throw new IOException("目标已存在或重命名失败");
+                    refresh(p);selectPane(p);
+                }catch(Exception e){fail(e);}
+            }).show();
+    }
+    private File unique(File parent,String original) {
+        File candidate=new File(parent,original);
+        if(!candidate.exists())return candidate;
+        int dot=original.lastIndexOf(".");
+        String stem=dot>0?original.substring(0,dot):original;
+        String ext=dot>0?original.substring(dot):"";
+        for(int i=2;i<9999;i++){
+            candidate=new File(parent,stem+" ("+i+")"+ext);
+            if(!candidate.exists())return candidate;
+        }
+        throw new IllegalStateException("重名文件太多");
+    }
+    private void copySelected() {
+        if(active.selected==null){say("先选择一个文件（或长按文件夹）");return;}
+        final Pane origin=active;
+        final Pane dest=active==left?right:left;
+        final File source=origin.selected;
+        if(source.isDirectory()){
+            try{
+                if(dest.folder.getCanonicalPath().equals(source.getCanonicalPath())||
+                    dest.folder.getCanonicalPath().startsWith(source.getCanonicalPath()+File.separator)){
+                    say("不能复制文件夹到它自己内部");return;
+                }
+            }catch(IOException e){fail(e);return;}
+        }
+        new AlertDialog.Builder(this).setTitle("复制到另一栏")
+            .setMessage(source.getName()+"\n→ "+dest.folder.getAbsolutePath()+"\n\n建议先用测试文件。")
+            .setNegativeButton("取消",null).setPositiveButton("复制",(d,w)->{
+                say("正在复制……");
+                io.execute(()->{
+                    try {
+                        if(!insideRoot(source)||!insideRoot(dest.folder))throw new IOException("越出共享存储范围");
+                        copy(source,unique(dest.folder,source.getName()),0);
+                        runOnUiThread(()->{
+                            refresh(origin);refresh(dest);selectPane(origin);
+                            say("复制完成："+source.getName());
+                        });
+                    } catch(Exception e){runOnUiThread(()->fail(e));}
+                });
+            }).show();
+    }
+    private void copy(File source,File target,int depth)throws Exception{
+        if(depth>25)throw new IOException("文件夹嵌套过深");
+        if(source.isDirectory()){
+            if(!target.mkdir()) throw new IOException("无法创建："+target.getName());
+            File[] entries=source.listFiles();
+            if(entries==null)throw new IOException("无法读取："+source.getName());
+            for(File item:entries)copy(item,new File(target,item.getName()),depth+1);
+            return;
+        }
+        if(!source.isFile())throw new IOException("暂不支持这种文件类型");
+        try(InputStream in=new FileInputStream(source);
+            OutputStream out=new FileOutputStream(target)){
+            byte[] buffer=new byte[32768];int size;
+            while((size=in.read(buffer))!=-1)out.write(buffer,0,size);
+        }
+    }
+    private void editSelected(){
+        if(active.selected==null||!active.selected.isFile()){say("先选中一个文本文件");return;}
+        File file=active.selected;
+        String lower=file.getName().toLowerCase(Locale.ROOT);
+        if(!(lower.endsWith(".txt")||lower.endsWith(".json")||lower.endsWith(".md")||
+             lower.endsWith(".js")||lower.endsWith(".css")||lower.endsWith(".html")||
+             lower.endsWith(".xml")||lower.endsWith(".ini")||lower.endsWith(".csv")||
+             lower.endsWith(".java")||lower.endsWith(".kt"))){say("只支持常见纯文本文件");return;}
+        if(file.length()>256*1024){say("文本编辑只支持 256KB 以内");return;}
+        try {
+            ByteArrayOutputStream out=new ByteArrayOutputStream();
+            try(InputStream in=new FileInputStream(file)){
+                byte[] buf=new byte[4096];int n;
+                while((n=in.read(buf))!=-1)out.write(buf,0,n);
+            }
+            EditText editor=new EditText(this);
+            editor.setTypeface(Typeface.MONOSPACE);
+            editor.setTextSize(13);
+            editor.setGravity(Gravity.TOP|Gravity.START);
+            editor.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+            editor.setMinLines(10);editor.setMaxLines(15);
+            editor.setText(out.toString("UTF-8"));
+            ScrollView scroll=new ScrollView(this);scroll.addView(editor);
+            new AlertDialog.Builder(this).setTitle("编辑："+file.getName()).setView(scroll)
+                .setNegativeButton("取消",null).setPositiveButton("保存",(d,w)->{
+                    try(OutputStream stream=new FileOutputStream(file)){
+                        stream.write(editor.getText().toString().getBytes(StandardCharsets.UTF_8));
+                        say("已保存："+file.getName());
+                    }catch(Exception e){fail(e);}
+                }).show();
+        }catch(Exception e){fail(e);}
+    }
+    private void say(String message){
+        android.widget.Toast.makeText(this,message,android.widget.Toast.LENGTH_LONG).show();
+    }
+    private void fail(Exception e){
+        new AlertDialog.Builder(this).setTitle("操作未完成").setMessage(e.getMessage())
+            .setPositiveButton("知道了",null).show();
     }
 }
