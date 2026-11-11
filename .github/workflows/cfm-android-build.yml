@@ -25,6 +25,14 @@ jobs:
         run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0
       - name: Test Android HTML+JS interactions in simulated browser
         run: node CFM-QA/ui-smoke.cjs android
+      - name: Static check of mobile pane-selection handlers
+        shell: bash
+        run: |
+          node --check Cheems-File-Manager-Android/app/src/main/assets/pcui/app.js
+          if grep -F '\$(".pane").forEach' Cheems-File-Manager-Android/app/src/main/assets/pcui/app.js; then
+            echo "Broken pane selector found"
+            exit 1
+          fi
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
