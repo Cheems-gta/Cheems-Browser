@@ -2,8 +2,8 @@
 
 const state = {
   panes: [
-    {path:"", parent:null, items:[], selected:new Set(), filter:"", truncated:false},
-    {path:"", parent:null, items:[], selected:new Set(), filter:"", truncated:false}
+    {path:"", parent:null, items:[], selected:new Set(), filter:"", truncated:false, history:[], historyPos:-1},
+    {path:"", parent:null, items:[], selected:new Set(), filter:"", truncated:false, history:[], historyPos:-1}
   ],
   active:0, locations:null, editor:null, pending:new Map(), sequence:0, tasks:0,
   previewVisible:false
@@ -77,7 +77,7 @@ function isArchive(name) {
   return /\.(zip|zipx|7z|rar|rar5|ace|lha|lzh|zpaq|arc|arj|tar|tgz|gz|bz2|xz|zst|jar|apk|xapk|apks|apkm|lz|z|001|r\d\d|z\d\d)$/i.test(name);
  }
 
-async function navigate(index,path) {
+async function navigate(index,path,historyPosition=null) {
   if (!path) return;
   const data = await call("list",{path});
   const pane=state.panes[index];
@@ -86,6 +86,15 @@ async function navigate(index,path) {
   pane.items=data.items;
   pane.selected.clear();
   pane.truncated=data.truncated;
+  if (historyPosition !== null) {
+    pane.historyPos=historyPosition;
+  } else if(pane.history[pane.historyPos] !== data.path) {
+    // Clear the forward chain whenever a new destination is visited.
+    pane.history=pane.history.slice(0,pane.historyPos+1);
+    pane.history.push(data.path);
+    if(pane.history.length>80)pane.history.shift();
+    pane.historyPos=pane.history.length-1;
+  }
   $("#path"+index).value=data.path;
   render(index);
   return data;
@@ -102,6 +111,74 @@ async function up(index=state.active) {
   if(state.panes[index].parent) await guarded(()=>navigate(index,state.panes[index].parent));
   else toast("已经到磁盘根目录了");
 }
+
+
+/* CFM navigation: per-pane history and one-touch dual-pane synchronization. */
+async function historyStep(delta) {
+  const index=state.active, pane=state.panes[index];
+  const next=pane.historyPos+delta;
+  if (next<0 || next>=pane.history.length) {
+    toast(delta<0?"没有更早的路径":"没有可以前进的路径");
+    return;
+  }
+  await guarded(async()=>{
+    await navigate(index,pane.history[next],next);
+    toast((delta<0?"后退到：":"前进到：")+pane.path);
+  });
+}
+async function syncOtherPane() {
+  const index=state.active;
+  const current=state.panes[index].path;
+  if(!current){toast("请先打开文件夹");return;}
+  await guarded(async()=>{
+    await navigate(1-index,current);
+    switchActive(index);
+    toast("左右两栏已同步到："+current);
+  });
+}
+async function createEmptyFile() {
+  const name=prompt("新建空文件名（包含扩展名）：","新建文件.txt");
+  if(name===null)return;
+  if(!name.trim()) {toast("文件名不能为空",true);return;}
+  await mutate("newFile",{path:activePane().path,name},"已新建文件");
+}
+function createMenu() {
+  const menu=$("#context");
+  menu.replaceChildren();
+  const actions=[
+    ["📁 新建文件夹",makeFolder],
+    ["▤ 新建空文件",createEmptyFile],
+    ["〈/〉 新建 HTML",newHtml],
+    ["⟳ 刷新当前目录",()=>guarded(()=>refresh(state.active))]
+  ];
+  for(const [name,fn] of actions) {
+    const button=document.createElement("button");
+    button.textContent=name;
+    button.addEventListener("click",e=>{
+      e.stopPropagation();
+      menu.classList.add("hidden");
+      fn();
+    });
+    menu.append(button);
+  }
+  menu.classList.remove("hidden");
+  requestAnimationFrame(()=>{
+    menu.style.left=Math.max(5,(window.innerWidth-menu.offsetWidth)/2)+"px";
+    menu.style.top=Math.max(5,(window.innerHeight-menu.offsetHeight)/2)+"px";
+  });
+}
+// Called from the Android native bottom toolbar. Exposed explicitly so
+// WebView can safely invoke these actions without reaching into local state.
+window.CFMNav = {
+  back:()=>historyStep(-1),
+  forward:()=>historyStep(1),
+  plus:createMenu,
+  newFolder:makeFolder,
+  newFile:createEmptyFile,
+  newHtml:newHtml,
+  sync:syncOtherPane,
+  up:()=>up()
+};
 
 function entryIcon(item) {
   if(item.isLink)return {symbol:"↗",type:"link"};
@@ -607,6 +684,17 @@ function contextMenu(x,y,item) {
 }
 
 function wire() {
+  const navCommands={
+    "nav-back":()=>historyStep(-1),
+    "nav-forward":()=>historyStep(1),
+    "nav-plus":createMenu,
+    "nav-sync":syncOtherPane,
+    "nav-up":()=>up()
+  };
+  for(const [name,handler] of Object.entries(navCommands)) {
+    const control=document.getElementById(name);
+    if(control)control.addEventListener("click",handler);
+  }
   $("#refresh").addEventListener("click",refreshBoth);
   const terminalButton=$("#terminal-button");
   if(terminalButton)terminalButton.addEventListener("click",()=>openTerminal(activePane().path));
