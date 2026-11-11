@@ -1,6 +1,11 @@
 package win.cheems.filemanager;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.ClipData;
+import android.net.Uri;
+import android.webkit.MimeTypeMap;
+import androidx.core.content.FileProvider;
 import android.os.Environment;
 
 import org.json.JSONArray;
@@ -66,6 +71,45 @@ final class PcNativeFileApi {
             case "zip": return zip(paths(args),required(args,"target"));
             default: throw new IOException("未实现的操作："+action);
         }
+    }
+
+
+    /** Actual Android OS share chooser. Apps such as WeChat and QQ may appear
+     * only if installed and capable of accepting the selected file MIME type.
+     * Access is via temporary read-only FileProvider URI grants, not file paths.
+     */
+    static Intent shareIntent(Context context, JSONObject args) throws Exception {
+        requireAccess();
+        JSONArray names=paths(args);
+        if (names.length()>20) throw new IOException("每次最多分享 20 个文件");
+        java.util.ArrayList<Uri> uris=new java.util.ArrayList<>();
+        String mime="*/*";
+        for(int i=0;i<names.length();i++) {
+            File file=safeFile(names.getString(i));
+            if(!file.isFile())throw new IOException(
+                "分享功能仅支持文件；如需分享文件夹，请先压缩成 ZIP");
+            if(!file.canRead())throw new IOException("没有权限读取："+file.getName());
+            if(i==0 && names.length()==1) {
+                String suffix=extension(file.getName()).replaceFirst("^\\.","");
+                String guessed=MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(suffix);
+                mime=(guessed==null||guessed.isEmpty())?
+                    "application/octet-stream":guessed;
+            }
+            // Provider grants time-limited read access to the recipient.
+            uris.add(FileProvider.getUriForFile(context,
+                context.getPackageName()+".fileshare",file));
+        }
+        Intent intent=new Intent(uris.size()>1 ?
+            Intent.ACTION_SEND_MULTIPLE : Intent.ACTION_SEND);
+        intent.setType(mime);
+        if(uris.size()==1) intent.putExtra(Intent.EXTRA_STREAM,uris.get(0));
+        else intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM,uris);
+        ClipData clip=ClipData.newRawUri("CFM 文件",uris.get(0));
+        for(int i=1;i<uris.size();i++)clip.addItem(new ClipData.Item(uris.get(i)));
+        intent.setClipData(clip);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return intent;
     }
 
     private static void requireAccess() throws IOException {
