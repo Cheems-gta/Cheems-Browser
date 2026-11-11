@@ -101,3 +101,8 @@ button.danger:hover{color:#ffc7c7;background:#4a2d35}
 .terminal-entry{flex:none;display:flex;gap:9px;align-items:center;padding:9px 12px;background:#222225}
 .terminal-entry label{color:#a8d5bd;font-size:17px}
 #terminal-input{flex:1;min-width:0;border:1px solid #4b4c50;background:#151517;color:#e7e7e8;padding:8px 10px;border-radius:4px;font:12px Consolas,"Microsoft YaHei UI",monospace}
+
+/* Android-specific touch interaction hints: original desktop theme retained. */
+.entry{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#mobile-file-actions{color:#dbeaf6;border:1px solid #5e82a2;background:#2b3a48;font-weight:600}
+#mobile-file-actions:hover,#mobile-file-actions:active{background:#3b5369}
