@@ -182,6 +182,109 @@ window.CFMNav = {
   up:()=>up()
 };
 
+
+/* File icons are fetched lazily from the native OS, never from a remote server.
+ * Only visible entries trigger requests. Missing icons retain existing glyphs.
+ */
+const nativeIconCache=new Map();
+const iconPending=new Map();
+const iconQueue=new Set();
+let iconTimer=null;
+function canHaveNativeIcon(item) {
+  if(item.isDir) {
+    return isAndroidBuild() &&
+      /\/Android\/(?:data|obb|media)\/[^/]+$/i.test(item.path);
+  }
+  return /\.(?:apk|apkm|apks|xapk|exe|dll)$/i.test(item.name);
+}
+function iconImageIfAvailable(icon,path) {
+  const value=nativeIconCache.get(path);
+  if(!value || !/^data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+$/.test(value))return;
+  const img=document.createElement("img");
+  img.src=value;
+  img.alt="";
+  img.decoding="async";
+  img.loading="lazy";
+  img.className="native-file-icon";
+  icon.textContent="";
+  icon.appendChild(img);
+  icon.classList.add("has-native-icon");
+}
+function enqueueIcon(icon,item) {
+  if(!canHaveNativeIcon(item))return;
+  if(nativeIconCache.has(item.path)) {
+    iconImageIfAvailable(icon,item.path);
+    return;
+  }
+  if(!iconPending.has(item.path))iconPending.set(item.path,new Set());
+  iconPending.get(item.path).add(icon);
+  iconQueue.add(item.path);
+  if(iconTimer===null)iconTimer=setTimeout(flushIconQueue,90);
+}
+async function flushIconQueue() {
+  iconTimer=null;
+  const paths=[...iconQueue].slice(0,12);
+  paths.forEach(path=>iconQueue.delete(path));
+  if(iconQueue.size && iconTimer===null)iconTimer=setTimeout(flushIconQueue,220);
+  if(!paths.length)return;
+  try {
+    const result=await call("icons",{paths});
+    const images=result?.icons||{};
+    for(const path of paths) {
+      const value=typeof images[path]==="string"?images[path]:null;
+      if(nativeIconCache.size>240)nativeIconCache.clear();
+      nativeIconCache.set(path,value);
+      for(const target of iconPending.get(path)||[]) {
+        if(target.isConnected)iconImageIfAvailable(target,path);
+      }
+      iconPending.delete(path);
+    }
+  }catch(_) {
+    for(const path of paths) {
+      nativeIconCache.set(path,null);
+      iconPending.delete(path);
+    }
+  }
+}
+let nativeIconObserver=null;
+function observeFileIcon(icon,item) {
+  if(!canHaveNativeIcon(item))return;
+  if(!nativeIconObserver && typeof IntersectionObserver!=="undefined") {
+    nativeIconObserver=new IntersectionObserver(entries=>{
+      for(const entry of entries) {
+        if(!entry.isIntersecting)continue;
+        nativeIconObserver.unobserve(entry.target);
+        const metadata=entry.target.__cfmIcon;
+        if(metadata)enqueueIcon(entry.target,metadata);
+      }
+    },{rootMargin:"200px"});
+  }
+  if(nativeIconObserver) {
+    icon.__cfmIcon=item;
+    nativeIconObserver.observe(icon);
+  } else {
+    // Simulated-browser tests and older WebViews still get a bounded fallback.
+    if(nativeIconCache.size+iconQueue.size<24)enqueueIcon(icon,item);
+  }
+}
+function flashLocatedFile(index,path) {
+  const rows=$("#entries"+index+" .entry[data-path]");
+  const row=rows.find(r=>r.dataset.path===path);
+  if(!row)return;
+  const previous=row.__cfmSearchTimer;
+  if(previous)clearTimeout(previous);
+  row.classList.remove("search-hit");
+  // Force reflow so repeated searches restart the green flash.
+  void row.offsetWidth;
+  row.classList.add("search-hit");
+  if(typeof row.scrollIntoView==="function") {
+    try{row.scrollIntoView({block:"center",behavior:"smooth"});}catch(_){}
+  }
+  row.__cfmSearchTimer=setTimeout(()=>{
+    if(row.isConnected)row.classList.remove("search-hit");
+  },2600);
+}
+
 function entryIcon(item) {
   if(item.isLink)return {symbol:"↗",type:"link"};
   if(item.isDir)return {symbol:"▰",type:"folder"};
@@ -227,6 +330,7 @@ function render(index) {
     const glyph=entryIcon(item);
     icon.className="icon "+glyph.type;
     icon.textContent=glyph.symbol;
+    observeFileIcon(icon,item);
     const label=document.createElement("span");
     label.className="name";
     label.textContent=item.name; // Never inject filenames as HTML.
@@ -487,13 +591,18 @@ async function executeSearch() {
       row.addEventListener("click",async()=>{
         $("#search-overlay").classList.add("hidden");
         switchActive(index);
-        const parent=file.isDir?file.path:file.path.slice(0,Math.max(
-          file.path.lastIndexOf("\\"),file.path.lastIndexOf("/")));
+        // Navigate to the CONTAINING folder so the matched name remains visible.
+        const divider=Math.max(file.path.lastIndexOf("\\"),file.path.lastIndexOf("/"));
+        let parent=divider>0?file.path.slice(0,divider):"/";
+        if(/^[A-Za-z]:$/.test(parent))parent+="\\";
         try {
           await navigate(index,parent);
-          if(!file.isDir){
-            state.panes[index].selected.add(file.path);
+          const pane=state.panes[index];
+          pane.selected.clear();
+          if(pane.items.some(entry=>entry.path===file.path)) {
+            pane.selected.add(file.path);
             showSelection(index);
+            flashLocatedFile(index,file.path);
           }
           toast("已定位："+file.name);
         }catch(error){toast(error.message,true)}
