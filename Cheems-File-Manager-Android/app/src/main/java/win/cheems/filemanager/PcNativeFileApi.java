@@ -246,6 +246,7 @@ final class PcNativeFileApi {
         JSONArray items=new JSONArray();
         for(int i=0;i<Math.min(files.length,MAX_LIST);i++) {
             File f=files[i];
+            if(f.getName().equals(".cfm_index.json") && dir.equals(new File(base(),".CFM_RecycleBin")))continue;
             boolean folder=f.isDirectory();
             items.put(new JSONObject()
                 .put("name",f.getName())
@@ -531,7 +532,7 @@ final class PcNativeFileApi {
             if(item.getName().startsWith(".cfm_index.json"))
                 throw new IOException("回收站索引不能作为文件恢复");
             String original=meta.optString(item.getName(),"");
-            File dest;
+            File dest=null;
             if(!original.isEmpty()){
                 dest=inside(original);
                 if(dest.getParentFile()==null || !dest.getParentFile().isDirectory() ||
@@ -544,6 +545,7 @@ final class PcNativeFileApi {
                 dest=new File(fallback,item.getName());
                 fallbackCount++;
             }
+            if(dest==null)throw new IOException("恢复目标目录无效");
             File finalDest=unique(dest.getParentFile(),dest.getName(),item.isDirectory());
             if(!item.renameTo(finalDest))
                 throw new IOException("恢复失败（原文件保留在回收站）");
