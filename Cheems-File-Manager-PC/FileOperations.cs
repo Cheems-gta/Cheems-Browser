@@ -33,6 +33,7 @@ public static class FileOperations
     public static object Execute(string action, JsonElement args) => action switch
     {
         "init" => InitialState(),
+        "icons" => NativeFileIcons.GetIcons(Paths(args)),
         "list" => ListDir(S(args, "path")),
         "search" => Search(S(args, "path"), S(args, "query")),
         "read" => ReadText(S(args, "path")),
