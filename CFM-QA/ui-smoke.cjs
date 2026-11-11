@@ -140,6 +140,10 @@ async function test(label,fn){
     assert.match(w.document.querySelector("#search-summary").textContent,/找到 1 项/);
     w.document.querySelector(".search-result").click();
     await waitFor(()=>w.document.querySelector("#search-overlay").classList.contains("hidden"));
+    // Wait for navigation to finish; a closed modal does not mean the async
+    // file listing has finished. Otherwise the following test races it.
+    await waitFor(()=>w.document.querySelector("#path0").value===downloads);
+    await new Promise(resolve=>setTimeout(resolve,30));
   });
 
   await test("search locates exact file and temporarily highlights its name green",async()=>{
