@@ -135,6 +135,7 @@ async function test(label,fn){
     assert.equal(requests.filter(x=>x.action==="recycle").length,before);
   });
   await test("Send To Trash only acts on selected files",async()=>{
+    if(mode==="android")await w.navigate(0,downloads);
     const row=w.document.querySelector("#entries0 .entry[data-path]");
     assert.ok(row);
     row.click();
@@ -142,11 +143,13 @@ async function test(label,fn){
     await waitFor(()=>requests.some(x=>x.action==="recycle"));
     const used=requests.find(x=>x.action==="recycle");
     assert.equal(used.args.paths.length,1);
-    assert.ok(used.args.paths[0].startsWith(mode==="android"?trash:downloads));
+    assert.ok(used.args.paths[0].startsWith(downloads));
   });
   await test("Restore action routes to Android native backend",async()=>{
     const restore=w.document.querySelector("#restore-trash");
     if(!restore)return;
+    w.document.querySelector("#delete").click();
+    await waitFor(()=>w.document.querySelector("#path0").value===trash);
     w.document.querySelector("#entries0 .entry[data-path]").click();
     restore.click();
     await waitFor(()=>requests.some(x=>x.action==="restore"));
