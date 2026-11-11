@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1200, user-scalable=yes">
+  <title>Cheems File Manager · PC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.1</small></span></div>
+      <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
+    </header>
+
+    <div class="quickbar">
+      <button class="quick" data-quick="home">⌂ 主目录</button>
+      <button class="quick" data-quick="desktop">▣ 桌面</button>
+      <button class="quick" data-quick="downloads">↓ 下载</button>
+      <button class="quick" data-quick="documents">▤ 文档</button>
+      <select id="drive" title="选择磁盘"><option value="">▰ 磁盘</option></select>
+      <div class="spacer"></div>
+      <button id="search" title="递归搜索当前栏文件名">⌕ 搜索</button>
+      <button id="refresh" title="刷新（F5）">⟳ 刷新</button>
+    </div>
+
+    <div class="actions">
+      <button id="up" title="上一级（Backspace）">↑ 上一级</button>
+      <button id="copy" title="复制到另一栏">⧉ 复制</button>
+      <button id="move" title="移动到另一栏">⇄ 移动</button>
+      <button id="new" title="在当前栏创建文件夹">＋ 文件夹</button>
+      <button id="rename" title="重命名（F2）">✎ 重命名</button>
+      <button id="delete" class="danger" title="移入 Windows 回收站（Delete）">♲ 回收站</button>
+      <span class="divider"></span>
+      <button id="edit" title="打开文本/HTML 源码编辑">〈/〉 编辑</button>
+      <button id="extract" title="ZIP、7z、RAR、TAR 等解压到另一栏">⇣ 解压</button>
+      <button id="zip" title="在另一栏生成 ZIP">▣ 创建 ZIP</button>
+    </div>
+
+    <main class="split">
+      <section class="pane active" id="pane0">
+        <div class="pane-top">
+          <div class="pane-title"><strong>左侧工作区</strong><span id="count0"></span></div>
+          <div class="address-line"><button class="pane-up" data-pane="0" title="上一级">↑</button><input class="path" id="path0" spellcheck="false" title="输入路径后按 Enter"><button class="goto" data-pane="0">前往</button></div>
+          <div class="filter-line"><input id="filter0" placeholder="筛选当前目录的文件名…" spellcheck="false"></div>
+        </div>
+        <div class="column-head"><span>名称</span><span>修改时间</span><span>大小</span></div>
+        <div class="entries" id="entries0"></div>
+        <div class="pane-foot" id="foot0"></div>
+      </section>
+      <div class="split-divider"></div>
+      <section class="pane" id="pane1">
+        <div class="pane-top">
+          <div class="pane-title"><strong>右侧工作区</strong><span id="count1"></span></div>
+          <div class="address-line"><button class="pane-up" data-pane="1" title="上一级">↑</button><input class="path" id="path1" spellcheck="false" title="输入路径后按 Enter"><button class="goto" data-pane="1">前往</button></div>
+          <div class="filter-line"><input id="filter1" placeholder="筛选当前目录的文件名…" spellcheck="false"></div>
+        </div>
+        <div class="column-head"><span>名称</span><span>修改时间</span><span>大小</span></div>
+        <div class="entries" id="entries1"></div>
+        <div class="pane-foot" id="foot1"></div>
+      </section>
+    </main>
+    <footer class="status">
+      <span id="status-text">准备就绪</span>
+      <span>双击进入目录 · 右键操作 · F5 刷新</span>
+    </footer>
+  </div>
+
+  <div id="context" class="context hidden" role="menu"></div>
+
+  <div class="overlay hidden" id="editor-overlay">
+    <section class="dialog editor-dialog">
+      <div class="dialog-title">
+        <div><strong>文本 / HTML 编辑器</strong><span id="editor-file">未打开文件</span></div>
+        <button id="close-editor" title="关闭">×</button>
+      </div>
+      <div class="editor-tools">
+        <span id="editor-mode">UTF-8</span><span class="spacer"></span>
+        <button id="preview-button" class="hidden">预览 HTML</button>
+        <button id="save-editor" class="primary">保存 Ctrl+S</button>
+      </div>
+      <div class="editor-body">
+        <textarea id="editor-text" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <div id="preview-pane" class="hidden">
+          <div class="preview-label">隔离预览 · 禁止脚本与网络访问</div>
+          <iframe id="html-preview" sandbox="" referrerpolicy="no-referrer" title="HTML 安全预览"></iframe>
+        </div>
+      </div>
+      <p class="editor-note">保存前会生成同目录 <code>.cfm.bak</code> 备份；仅支持 2 MB 以下 UTF-8 文本。</p>
+    </section>
+  </div>
+
+  <div class="overlay hidden" id="search-overlay">
+    <section class="dialog search-dialog">
+      <div class="dialog-title"><strong>搜索结果</strong><button id="close-search">×</button></div>
+      <div id="search-summary" class="search-summary"></div>
+      <div id="search-results" class="search-results"></div>
+    </section>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="android-bridge.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
