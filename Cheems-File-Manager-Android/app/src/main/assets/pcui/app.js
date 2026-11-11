@@ -384,6 +384,119 @@ async function search() {
   });
 }
 
+
+/* V0.2: desktop context utilities and Android system sharing.
+ * Browser messaging is already handled by the existing native bridge.
+ */
+function isAndroidBuild() {
+  return !!window.AndroidFileApi;
+}
+
+async function shareSelected() {
+  try {
+    const paths=selectedPaths();
+    const out=await guarded(()=>call("share",{paths}));
+    if(out) toast(out.message ||
+      (isAndroidBuild() ? "已打开系统分享菜单" : "已打开文件位置"));
+  }catch(e){toast(e.message,true)}
+}
+
+async function fileProperties() {
+  try {
+    const item=oneItem();
+    const out=await guarded(()=>call("properties",{path:item.path}));
+    if(!out) return;
+    alert("文件属性\n\n"+
+      "名称："+out.name+"\n"+
+      "位置："+out.path+"\n"+
+      "类型："+out.kind+"\n"+
+      "大小："+(out.isDir?"文件夹":formatBytes(out.size))+"\n"+
+      "创建时间："+(out.created||"—")+"\n"+
+      "修改时间："+(out.modified||"—")+"\n"+
+      "只读："+(out.readonly?"是":"否"));
+  }catch(e){toast(e.message,true)}
+}
+
+async function hashSelected() {
+  try {
+    const item=oneItem();
+    if(item.isDir) throw new Error("SHA-256 目前只支持单个文件");
+    const out=await guarded(()=>call("hash",{path:item.path}));
+    if(!out)return;
+    alert("工具 · SHA-256\n\n文件："+item.name+"\n\n"+out.sha256+
+      "\n\n注意：哈希值用于对比文件是否相同，不代表文件安全。");
+  }catch(e){toast(e.message,true)}
+}
+
+async function signatureInfo() {
+  try {
+    const item=oneItem();
+    if(!/\.(exe|dll|msi)$/i.test(item.name))throw new Error("仅查看 EXE / DLL / MSI 签名信息");
+    const out=await guarded(()=>call("signature",{path:item.path}));
+    if(out)alert("数字签名信息\n\n文件："+item.name+"\n\n"+
+      (out.status||"未检测到签名")+
+      (out.subject?"\n\n证书使用者："+out.subject:"")+
+      (out.issuer?"\n证书颁发者："+out.issuer:"")+
+      (out.validUntil?"\n证书有效期至："+out.validUntil:"")+
+      "\n\n证书信息不能单独证明程序安全。");
+  }catch(e){toast(e.message,true)}
+}
+
+async function openWithSelected() {
+  try {
+    const item=oneItem();
+    if(item.isDir)throw new Error("请选择一个文件");
+    const out=await guarded(()=>call("openWith",{path:item.path}));
+    if(out?.message)toast(out.message);
+  }catch(e){toast(e.message,true)}
+}
+
+function getBookmarks() {
+  try {
+    const data=JSON.parse(localStorage.getItem("cfm.bookmarks.v02")||"[]");
+    return Array.isArray(data)?data.filter(v=>typeof v==="string").slice(0,40):[];
+  }catch(_){return[]}
+}
+function putBookmarks(items) {
+  try { localStorage.setItem("cfm.bookmarks.v02",JSON.stringify(items.slice(0,40))); }
+  catch(e){toast("无法保存书签："+e.message,true)}
+}
+function bookmarkCurrent() {
+  let folder=activePane().path;
+  if(!folder)return;
+  try {
+    if(activePane().selected.size===1){
+      const item=oneItem();
+      if(item.isDir)folder=item.path;
+    }
+  }catch(_){}
+  const old=getBookmarks();
+  if(old.includes(folder)){toast("该目录已经收藏");return}
+  putBookmarks([...old,folder]);
+  toast("已收藏："+folder);
+}
+function showBookmarks() {
+  const folders=getBookmarks();
+  if(!folders.length){toast("还没有书签，请先在右键菜单选择“添加书签”");return}
+  const text=folders.map((v,i)=>(i+1)+". "+v).join("\n");
+  const chosen=prompt("我的文件夹书签\n\n"+text+
+    "\n\n输入数字打开，或输入“删除 数字”移除书签：","");
+  if(!chosen)return;
+  const trimmed=chosen.trim();
+  const del=/^删除\s*(\d+)$/.exec(trimmed);
+  if(del) {
+    const n=Number(del[1])-1;
+    if(n<0||n>=folders.length){toast("没有这个书签",true);return}
+    const gone=folders.splice(n,1)[0];
+    putBookmarks(folders);toast("已删除书签："+gone);
+    return;
+  }
+  const n=Number(trimmed)-1;
+  if(!Number.isInteger(n)||n<0||n>=folders.length){
+    toast("请输入有效的书签序号",true);return;
+  }
+  guarded(()=>navigate(state.active,folders[n]));
+}
 function contextMenu(x,y,item) {
   const menu=$("#context");
   menu.replaceChildren();
@@ -394,9 +507,21 @@ function contextMenu(x,y,item) {
     ["重命名",rename],
     ["移入回收站",recycle],
     ["创建 ZIP",makeZip],
-    ["刷新",refreshBoth]
   ];
-  if(!item.isDir&&isArchive(item.name))actions.splice(5,0,["解压到另一栏",extract]);
+  if (!item.isDir && isArchive(item.name))
+    actions.push(["解压到另一栏",extract]);
+  // On Android, ACTION_SEND opens the actual installed-app share chooser.
+  // On Windows, "分享" locates the file in Explorer for installed chat apps.
+  actions.push([isAndroidBuild()?"分享给微信 / QQ / 其他应用":"分享 / 定位文件",shareSelected]);
+  if(!isAndroidBuild()) {
+    actions.push(["属性",fileProperties]);
+    if(!item.isDir)actions.push(["工具 · SHA-256",hashSelected]);
+    if(!item.isDir && /\.(exe|dll|msi)$/i.test(item.name))
+      actions.push(["数字签名信息",signatureInfo]);
+    if(!item.isDir)actions.push(["打开方式…",openWithSelected]);
+    actions.push(["添加书签",bookmarkCurrent]);
+  }
+  actions.push(["刷新",refreshBoth]);
   for (const [label,fn] of actions) {
     const b=document.createElement("button");
     b.textContent=label;
@@ -412,6 +537,10 @@ function contextMenu(x,y,item) {
 
 function wire() {
   $("#refresh").addEventListener("click",refreshBoth);
+  const shareButton=$("#share");
+  if(shareButton) shareButton.addEventListener("click",shareSelected);
+  const bookmarkButton=$("#bookmarks");
+  if(bookmarkButton) bookmarkButton.addEventListener("click",showBookmarks);
   $("#search").addEventListener("click",search);
   $("#up").addEventListener("click",()=>up());
   $("#copy").addEventListener("click",()=>transfer(false));
