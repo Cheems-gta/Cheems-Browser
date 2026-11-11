@@ -44,6 +44,7 @@ public static class FileOperations
         "newFile" => NewFile(S(args, "path"), S(args, "name")),
         "newHtml" => NewHtml(S(args, "path"), S(args, "name")),
         "recycle" => Recycle(Paths(args)),
+        "openTrash" => OpenTrash(),
         "extract" => ExpandedArchive.Extract(S(args, "path"), S(args, "target")),
         "shell" => Shell(S(args, "cwd"), S(args, "command")),
         "terminalWindow" => OpenTerminalWindow(S(args, "cwd")),
@@ -438,6 +439,20 @@ public static class FileOperations
             if (attr.HasFlag(FileAttributes.Directory)) CopyDirectory(entry, dest, depth + 1);
             else File.Copy(entry, dest);
         }
+    }
+
+    private static object OpenTrash()
+    {
+        // Use Windows' own Recycle Bin UI; do not pretend that it is a regular directory.
+        string explorer = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        var options = new ProcessStartInfo
+        {
+            FileName = explorer, UseShellExecute = true
+        };
+        options.ArgumentList.Add("shell:RecycleBinFolder");
+        Process.Start(options);
+        return new { message = "已在 Windows 资源管理器中打开回收站" };
     }
 
     private static object Recycle(string[] sources)
