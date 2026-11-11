@@ -108,6 +108,26 @@ static class Program
                 return outFile!=null && File.Exists(outFile)
                     && ZipFile.OpenRead(outFile).Entries.Any(e=>e.FullName=="renamed.txt");
             });
+            Check("APK icon reader returns embedded launcher image",()=>{
+                string apk=Path.Combine(left,"icon-test.apk");
+                byte[] png=Convert.FromBase64String(
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Yf7fXsAAAAASUVORK5CYII=");
+                using(var archive=ZipFile.Open(apk,ZipArchiveMode.Create))
+                {
+                    var entry=archive.CreateEntry("res/mipmap-xxxhdpi/ic_launcher.png");
+                    using var output=entry.Open();
+                    output.Write(png);
+                }
+                var icons=Api("icons",new {paths=new[]{apk}}).GetProperty("icons");
+                return icons.GetProperty(apk).GetString()?.StartsWith("data:image/png;base64,")==true;
+            });
+            Check("Windows EXE icon reader loads local shell icon",()=>{
+                string? process=Environment.ProcessPath;
+                if(process==null||!File.Exists(process))return false;
+                var icons=Api("icons",new {paths=new[]{process}}).GetProperty("icons");
+                return icons.TryGetProperty(process,out var icon) &&
+                  icon.GetString()?.StartsWith("data:image/png;base64,")==true;
+            });
             Check("EXTRACT restores a ZIP with identical file content",()=>{
                 var zipFile=Directory.GetFiles(right,"*.zip").Single();
                 var result=Api("extract",new {path=zipFile,target=left});
