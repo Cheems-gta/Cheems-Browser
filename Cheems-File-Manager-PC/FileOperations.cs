@@ -41,6 +41,7 @@ public static class FileOperations
         "move" => Transfer(Paths(args), S(args, "target"), true),
         "rename" => Rename(S(args, "path"), S(args, "name")),
         "mkdir" => NewFolder(S(args, "path"), S(args, "name")),
+        "newFile" => NewFile(S(args, "path"), S(args, "name")),
         "newHtml" => NewHtml(S(args, "path"), S(args, "name")),
         "recycle" => Recycle(Paths(args)),
         "extract" => ExpandedArchive.Extract(S(args, "path"), S(args, "target")),
@@ -332,6 +333,17 @@ public static class FileOperations
             "  <h1>Hello, HTML!</h1>\n</body>\n</html>\n";
         File.WriteAllText(target,template,new UTF8Encoding(false));
         return new { path=target };
+    }
+
+    private static object NewFile(string parent, string name)
+    {
+        string directory=Path.GetFullPath(parent);
+        if(!Directory.Exists(directory))
+            throw new DirectoryNotFoundException(directory);
+        string path=Path.Combine(directory,ValidName(name));
+        if(PathExists(path))throw new IOException("文件名已被占用");
+        using(File.Create(path)) { }
+        return new { path };
     }
 
     private static object NewFolder(string parent, string name)
