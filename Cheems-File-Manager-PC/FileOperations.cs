@@ -17,6 +17,8 @@ public static class FileOperations
     private const long MaxExtractTotalBytes = 2L * 1024 * 1024 * 1024;
     private const int MaxExtractFiles = 4000;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private sealed record FileEntry(string name, string path, bool isDir,
+        bool isLink, long size, string modified);
 
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -90,7 +92,7 @@ public static class FileOperations
     {
         string full = Path.GetFullPath(input);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("目录不存在：" + full);
-        var items = new List<object>();
+        var items = new List<FileEntry>();
         var listing = Directory.EnumerateFileSystemEntries(full).Take(2001).ToArray();
         foreach (string path in listing.Take(2000))
         {
@@ -99,15 +101,13 @@ public static class FileOperations
                 var attributes = File.GetAttributes(path);
                 bool folder = attributes.HasFlag(FileAttributes.Directory);
                 var info = folder ? (FileSystemInfo)new DirectoryInfo(path) : new FileInfo(path);
-                items.Add(new
-                {
-                    name = info.Name,
-                    path = info.FullName,
-                    isDir = folder,
-                    isLink = attributes.HasFlag(FileAttributes.ReparsePoint),
-                    size = folder ? 0L : ((FileInfo)info).Length,
-                    modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
-                });
+                items.Add(new FileEntry(
+                    info.Name,
+                    info.FullName,
+                    folder,
+                    attributes.HasFlag(FileAttributes.ReparsePoint),
+                    folder ? 0L : ((FileInfo)info).Length,
+                    info.LastWriteTime.ToString("yyyy-MM-dd HH:mm")));
             }
             catch (UnauthorizedAccessException) { /* individual entry is inaccessible */ }
             catch (IOException) { /* item was renamed while listing */ }
@@ -116,8 +116,8 @@ public static class FileOperations
         {
             path = full,
             parent = Directory.GetParent(full)?.FullName,
-            items = items.OrderBy(v => ((dynamic)v).isDir ? 0 : 1)
-                .ThenBy(v => ((dynamic)v).name, StringComparer.OrdinalIgnoreCase)
+            items = items.OrderBy(v => v.isDir ? 0 : 1)
+                .ThenBy(v => v.name, StringComparer.OrdinalIgnoreCase)
                 .ToArray(),
             truncated = listing.Length > 2000
         };
@@ -337,7 +337,7 @@ public static class FileOperations
         long total = 0;
         try
         {
-            using var archive = ArchiveFactory.Open(source);
+            using var archive = ArchiveFactory.OpenArchive(source);
             foreach (var entry in archive.Entries)
             {
                 if (++count > MaxExtractFiles) throw new IOException("压缩包项目超过 4000 个，已中止");
