@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.3</small></span></div>
+      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.4</small></span></div>
       <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
     </header>
 
@@ -64,6 +64,13 @@
         <div class="pane-foot" id="foot1"></div>
       </section>
     </main>
+    <nav class="nav-toolbar" aria-label="文件夹导航">
+      <button id="nav-back" title="当前栏：后退到上一个文件夹">‹ <span>后退</span></button>
+      <button id="nav-forward" title="当前栏：前进到下一个文件夹">› <span>前进</span></button>
+      <button id="nav-plus" title="新建文件、新建文件夹、新建 HTML">＋ <span>新建</span></button>
+      <button id="nav-sync" title="将另一栏同步到当前栏所在文件夹">⇄ <span>同步双栏</span></button>
+      <button id="nav-up" title="当前栏：返回上一级目录">↑ <span>上一级</span></button>
+    </nav>
     <footer class="status">
       <span id="status-text">准备就绪</span>
       <span>双击进入目录 · 右键操作 · F5 刷新</span>
