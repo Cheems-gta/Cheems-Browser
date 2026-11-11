@@ -144,6 +144,8 @@ async function test(label,fn){
 
   await test("search locates exact file and temporarily highlights its name green",async()=>{
     await setPath(0,home);
+    // Search acts on the currently active pane, so explicitly activate left.
+    w.document.querySelector("#entries0 .entry[data-path]").click();
     w.document.querySelector("#search").click();
     w.document.querySelector("#search-query").value="sample";
     w.document.querySelector("#search-submit").click();
