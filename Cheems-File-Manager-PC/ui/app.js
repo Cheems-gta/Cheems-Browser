@@ -693,7 +693,10 @@ function wire() {
   };
   for(const [name,handler] of Object.entries(navCommands)) {
     const control=document.getElementById(name);
-    if(control)control.addEventListener("click",handler);
+    if(control)control.addEventListener("click",event=>{
+      if(name==="nav-plus") event.stopPropagation();
+      handler();
+    });
   }
   $("#refresh").addEventListener("click",refreshBoth);
   const terminalButton=$("#terminal-button");
