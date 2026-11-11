@@ -152,8 +152,19 @@ final class PeIconReader {
         return (b[at]&255)|((b[at+1]&255)<<8)|
             ((b[at+2]&255)<<16)|((b[at+3]&255)<<24);
     }
-    private record IconItem(int id,int w,int h,int bits){}
-    private record Entry(int name,int target,boolean directory){}
+    private static final class IconItem {
+        final int id,w,h,bits;
+        IconItem(int id,int w,int h,int bits) {
+            this.id=id;this.w=w;this.h=h;this.bits=bits;
+        }
+    }
+    private static final class Entry {
+        final int name,target;
+        final boolean directory;
+        Entry(int name,int target,boolean directory) {
+            this.name=name;this.target=target;this.directory=directory;
+        }
+    }
 
     private static final class Pe {
         final RandomAccessFile file;
