@@ -112,3 +112,7 @@ button.danger:hover{color:#ffc7c7;background:#4a2d35}
 #search-query{min-width:0;flex:1;background:#171719;border:1px solid #55565a;border-radius:5px;color:var(--text);padding:10px 12px;font-size:14px}
 #search-submit{background:#285d8b;border:1px solid #3679ad;padding:10px 22px;font-weight:600}
 #search-submit:disabled{opacity:.6;cursor:wait}
+
+/* Custom Cheems logo in the PC-styled app header. */
+.brand-mark{width:34px;height:34px;background:transparent;border-radius:7px;overflow:hidden;flex:none}
+.brand-mark img{width:100%;height:100%;object-fit:cover;display:block;border-radius:7px}
