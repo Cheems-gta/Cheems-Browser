@@ -73,7 +73,9 @@ function formatBytes(bytes) {
   return (bytes/1073741824).toFixed(2)+" GB";
 }
 function isText(name) { return /\.(txt|md|htm|html|css|js|ts|json|xml|yaml|yml|ini|cfg|log|csv|py|cs|java|cpp|c|h|hpp|svg|bat|ps1)$/i.test(name); }
-function isArchive(name) { return /\.(zip|7z|rar|tar|tgz|gz|bz2|xz|jar|apk|xapk|apks|apkm)$/i.test(name); }
+function isArchive(name) {
+  return /\.(zip|zipx|7z|rar|rar5|ace|lha|lzh|zpaq|arc|arj|tar|tgz|gz|bz2|xz|zst|jar|apk|xapk|apks|apkm|lz|z|001|r\d\d|z\d\d)$/i.test(name);
+ }
 
 async function navigate(index,path) {
   if (!path) return;
@@ -257,13 +259,14 @@ async function recycle() {
     await mutate("recycle",{paths},"已移入回收站");
   }catch(e){toast(e.message,true)}
 }
-async function extract() {
+async function extract(location="other") {
   try {
     const item=oneItem();
     if(item.isDir)throw new Error("请选择一个压缩文件");
     if(!isArchive(item.name))throw new Error("请选 ZIP / 7z / RAR / TAR 等支持的压缩文件");
-    const target=state.panes[1-state.active].path;
-    if(!confirm("解压："+item.name+"\n\n目标："+target+"\n\n部分加密包或分卷格式可能不支持；建议先用测试文件。"))return;
+    const target=location==="current"?activePane().path:state.panes[1-state.active].path;
+    if(!confirm("解压："+item.name+"\n\n目标："+target+"\n\n将创建独立解压文件夹。"+
+      "\n分卷请放在一起，选第一卷或任一可识别分卷。ZPAQ/LZH 需要 PC 已安装相应工具。"))return;
     await mutate("extract",{path:item.path,target},"已解压到另一栏");
   }catch(e){toast(e.message,true)}
 }
@@ -497,6 +500,69 @@ function showBookmarks() {
   }
   guarded(()=>navigate(state.active,folders[n]));
 }
+
+async function htmlPreviewSelected() {
+  try {
+    const item=oneItem();
+    if(!/\.html?$/i.test(item.name))throw new Error("请选择 HTML 或 HTM 文件");
+    await openEditor(item.path);
+    if(currentEditor && !state.previewVisible) togglePreview();
+  }catch(e){toast(e.message,true)}
+}
+
+async function newHtml() {
+  const parent=activePane().path;
+  let name=prompt("新建 HTML 文件名：","index.html");
+  if(name===null)return;
+  if(!/^[^\\/:*?"<>|]+\.html?$/i.test(name)){
+    toast("文件名必须以 .html 或 .htm 结尾",true);return;
+  }
+  await mutate("newHtml",{path:parent,name},"已创建 HTML 文件");
+}
+
+let terminalPath="";
+function openTerminal(path) {
+  terminalPath=path||activePane().path;
+  if(!terminalPath)return;
+  $("#terminal-overlay").classList.remove("hidden");
+  $("#terminal-path").textContent=terminalPath;
+  $("#terminal-output").textContent=(isAndroidBuild()?"Android 应用身份终端":"Windows CMD")+
+    " · "+terminalPath+"\n"+
+    "命令由你输入，以普通用户权限运行，不能撤销执行的修改。\n"+
+    "请勿在终端输入来源不明的命令。\n\n";
+  $("#terminal-input").value="";
+  $("#terminal-input").focus();
+}
+function closeTerminal() {
+  $("#terminal-overlay").classList.add("hidden");
+}
+async function runTerminal() {
+  const input=$("#terminal-input");
+  const command=input.value.trim();
+  if(!command)return;
+  input.value="";
+  const output=$("#terminal-output");
+  output.textContent+="> "+command+"\n";
+  if(command==="clear"||command==="cls"){
+    output.textContent="";
+    return;
+  }
+  try {
+    const out=await guarded(()=>call("shell",{cwd:terminalPath,command}));
+    if(out){
+      output.textContent+=(out.output||"(无输出)")+"\n"+(out.exitCode?"[退出码 "+out.exitCode+"]\n":"")+"\n";
+      if(output.textContent.length>65000)
+        output.textContent=output.textContent.slice(-50000);
+      output.scrollTop=output.scrollHeight;
+    }
+  }catch(e){output.textContent+="错误："+e.message+"\n"}
+}
+async function externalTerminal() {
+  try {
+    const out=await guarded(()=>call("terminalWindow",{cwd:terminalPath}));
+    if(out)toast(out.message||"终端已打开");
+  }catch(e){toast(e.message,true)}
+}
 function contextMenu(x,y,item) {
   const menu=$("#context");
   menu.replaceChildren();
@@ -506,18 +572,23 @@ function contextMenu(x,y,item) {
     ["移动到另一栏",()=>transfer(true)],
     ["重命名",rename],
     ["移入回收站",recycle],
-    ["创建 ZIP",makeZip],
+    ["创建 ZIP",makeZip]
   ];
-  if (!item.isDir && isArchive(item.name))
-    actions.push(["解压到另一栏",extract]);
-  // On Android, ACTION_SEND opens the actual installed-app share chooser.
-  // On Windows, "分享" locates the file in Explorer for installed chat apps.
-  actions.push([isAndroidBuild()?"分享给微信 / QQ / 其他应用":"分享 / 定位文件",shareSelected]);
+  if (!item.isDir && isArchive(item.name)) {
+    actions.push(["📦 直接解压 · 当前目录",()=>extract("current")]);
+    actions.push(["📦 直接解压 · 另一栏",()=>extract("other")]);
+  }
+  if(!item.isDir && /\.html?$/i.test(item.name)){
+    actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
+  }
+  actions.push([isAndroidBuild()?"分享给微信 / QQ":"分享 / 定位文件",shareSelected]);
+  actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
+  actions.push(["＋ 创建 HTML 文件",newHtml]);
   if(!isAndroidBuild()) {
     actions.push(["属性",fileProperties]);
     if(!item.isDir)actions.push(["工具 · SHA-256",hashSelected]);
     if(!item.isDir && /\.(exe|dll|msi)$/i.test(item.name))
-      actions.push(["数字签名信息",signatureInfo]);
+      actions.push(["EXE 数字签名信息",signatureInfo]);
     if(!item.isDir)actions.push(["打开方式…",openWithSelected]);
     actions.push(["添加书签",bookmarkCurrent]);
   }
@@ -537,6 +608,23 @@ function contextMenu(x,y,item) {
 
 function wire() {
   $("#refresh").addEventListener("click",refreshBoth);
+  const terminalButton=$("#terminal-button");
+  if(terminalButton)terminalButton.addEventListener("click",()=>openTerminal(activePane().path));
+  const htmlButton=$("#html-button");
+  if(htmlButton)htmlButton.addEventListener("click",htmlPreviewSelected);
+  const closeTerminalButton=$("#close-terminal");
+  if(closeTerminalButton)closeTerminalButton.addEventListener("click",closeTerminal);
+  const runTerminalButton=$("#run-terminal");
+  if(runTerminalButton)runTerminalButton.addEventListener("click",runTerminal);
+  const termInput=$("#terminal-input");
+  if(termInput)termInput.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){e.preventDefault();runTerminal();}
+  });
+  const externalTerminalButton=$("#external-terminal");
+  if(externalTerminalButton) {
+    externalTerminalButton.classList.toggle("hidden",isAndroidBuild());
+    externalTerminalButton.addEventListener("click",externalTerminal);
+  }
   const shareButton=$("#share");
   if(shareButton) shareButton.addEventListener("click",shareSelected);
   const bookmarkButton=$("#bookmarks");
@@ -549,7 +637,7 @@ function wire() {
   $("#rename").addEventListener("click",rename);
   $("#delete").addEventListener("click",recycle);
   $("#edit").addEventListener("click",()=>{try{const item=oneItem();openItem(item)}catch(e){toast(e.message,true)}});
-  $("#extract").addEventListener("click",extract);
+  $("#extract").addEventListener("click",()=>extract("other"));
   $("#zip").addEventListener("click",makeZip);
   $("#close-editor").addEventListener("click",closeEditor);
   $("#save-editor").addEventListener("click",saveEditor);
@@ -580,6 +668,7 @@ function wire() {
   });
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){
+      if(!$("#terminal-overlay").classList.contains("hidden")){closeTerminal();return;}
       $("#context").classList.add("hidden");
       if(!$("#search-overlay").classList.contains("hidden"))$("#search-overlay").classList.add("hidden");
       else if(!$("#editor-overlay").classList.contains("hidden"))closeEditor();
