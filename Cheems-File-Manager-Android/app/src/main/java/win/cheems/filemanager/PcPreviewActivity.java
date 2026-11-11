@@ -289,8 +289,9 @@ public final class PcPreviewActivity extends Activity {
                         final Intent view=PcNativeFileApi.openIntent(PcPreviewActivity.this,arguments);
                         main.post(()->{
                             try {
-                                if(view.resolveActivity(getPackageManager())==null)
-                                    throw new java.io.IOException("没有能打开此类型文件的应用，请安装对应查看器，或长按选择其他操作");
+                                // Android 11+ package visibility can make resolveActivity()
+                                // return null even when a viewer exists. Ask Android's
+                                // chooser directly; ActivityNotFoundException is caught below.
                                 startActivity(Intent.createChooser(view,"选择打开方式"));
                                 send(new JSONObject().put("id",replyId).put("ok",true)
                                     .put("data",new JSONObject().put("message","已打开系统打开方式菜单")));
