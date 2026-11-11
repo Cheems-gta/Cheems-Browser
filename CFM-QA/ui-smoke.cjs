@@ -24,6 +24,8 @@ const fixture={
   [downloads]:[
     {name:"sample.zip",isDir:false,path:downloads+"/sample.zip",size:532},
     {name:"sample.html",isDir:false,path:downloads+"/sample.html",size:250},
+    {name:"photo.jpg",isDir:false,path:downloads+"/photo.jpg",size:1088},
+    {name:"legacy.txt",isDir:false,path:downloads+"/legacy.txt",size:77},
     {name:"sample.apk",isDir:false,path:downloads+"/sample.apk",size:30000}
   ],
   [trash]:[{name:"deleted.txt",isDir:false,path:trash+"/deleted.txt",size:7}]
@@ -259,21 +261,22 @@ async function test(label,fn){
       await waitFor(()=>requests.slice(before).some(x=>x.action==="openWith"&&x.args.path===filePath));
     }
   });
+  await setPath(0,downloads);
   await test("Android non-text file opens via system viewer",async()=>{
     const before=requests.filter(x=>x.action==="openWith").length;
-    await w.openItem({path:downloads+"/photo.jpg",name:"photo.jpg",isDir:false});
+    w.document.querySelector('#entries0 .entry[data-path$="photo.jpg"]').dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
     await waitFor(()=>requests.filter(x=>x.action==="openWith").length===before+1);
   });
   await test("Android non-UTF8 text falls back to external viewer",async()=>{
     const oldReads=requests.filter(x=>x.action==="read").length;
     const oldOpen=requests.filter(x=>x.action==="openWith").length;
-    await w.openItem({path:downloads+"/legacy.txt",name:"legacy.txt",isDir:false});
+    w.document.querySelector('#entries0 .entry[data-path$="legacy.txt"]').dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
     await waitFor(()=>requests.filter(x=>x.action==="read").length===oldReads+1);
     await waitFor(()=>requests.filter(x=>x.action==="openWith").length===oldOpen+1);
   });
   await test("Android archive file opens through installed file viewer",async()=>{
     const oldOpen=requests.filter(x=>x.action==="openWith").length;
-    await w.openItem({path:downloads+"/sample.zip",name:"sample.zip",isDir:false});
+    w.document.querySelector('#entries0 .entry[data-path$="sample.zip"]').dispatchEvent(new w.MouseEvent("dblclick",{bubbles:true}));
     await waitFor(()=>requests.filter(x=>x.action==="openWith").length===oldOpen+1);
   });
   await test("HTML and archive buttons exist",async()=>{
