@@ -155,6 +155,14 @@ async function test(label,fn){
     w.document.querySelector("#search-submit").click();
     await waitFor(()=>w.document.querySelectorAll(".search-result").length===1);
     w.document.querySelector(".search-result").click();
+    await new Promise(r=>setTimeout(r,100));
+    console.log("DIAG SEARCH | mode="+mode+
+      " path0="+w.document.querySelector("#path0").value+
+      " path1="+w.document.querySelector("#path1").value+
+      " active="+[...w.document.querySelectorAll(".pane")].findIndex(e=>e.classList.contains("active"))+
+      " hits="+w.document.querySelectorAll("#entries0 .entry.search-hit").length+
+      " entries="+w.document.querySelectorAll("#entries0 .entry[data-path]").length+
+      " lastCall="+JSON.stringify(requests[requests.length-1]));
     await waitFor(()=>w.document.querySelector("#path0").value===downloads);
     await waitFor(()=>!!w.document.querySelector("#entries0 .entry.search-hit"));
     const target=[...w.document.querySelectorAll("#entries0 .entry")]
