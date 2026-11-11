@@ -270,7 +270,7 @@ function observeFileIcon(icon,item) {
   }
 }
 function flashLocatedFile(index,path) {
-  const rows=document.querySelectorAll("#entries"+index+" .entry[data-path]");
+  const rows=Array.from(document.querySelectorAll("#entries"+index+" .entry[data-path]"));
   const row=rows.find(r=>r.dataset.path===path);
   if(!row)return;
   const previous=row.__cfmSearchTimer;
