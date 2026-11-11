@@ -6,9 +6,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CheemsFileManagerPC</AssemblyName>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
+    <ApplicationIcon>branding\cfm_icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="branding\cfm_icon.ico" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageReference Include="SharpCompress" Version="0.50.8" />
     <EmbeddedResource Include="ui\index.html" LogicalName="CFM.UI.index.html"/>
