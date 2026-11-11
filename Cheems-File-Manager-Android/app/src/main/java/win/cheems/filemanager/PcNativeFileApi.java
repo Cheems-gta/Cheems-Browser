@@ -1,0 +1,406 @@
+package win.cheems.filemanager;
+
+import android.content.Context;
+import android.os.Environment;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+/** Android implementations of the original CFM PC WebView file-operation protocol. */
+final class PcNativeFileApi {
+    private static final int MAX_LIST=2000;
+    private static final int MAX_SEARCH=50000;
+    private static final int MAX_SEARCH_RESULTS=180;
+    private static final int MAX_COPY_DEPTH=45;
+    private static final int MAX_ZIP_FILES=12000;
+    private static final long MAX_TEXT=2L*1024*1024;
+    private static final long MAX_ZIP_SIZE=2L*1024*1024*1024;
+    private static final SimpleDateFormat STAMP =
+        new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+    private static final Set<String> TEXT_EXTENSIONS=new HashSet<>(Arrays.asList(
+        ".txt",".md",".html",".htm",".css",".js",".ts",".json",".xml",".yaml",
+        ".yml",".ini",".cfg",".log",".csv",".py",".cs",".java",".cpp",
+        ".c",".h",".hpp",".svg",".bat",".ps1"));
+
+    static JSONObject execute(Context context,String action,JSONObject args) throws Exception {
+        if ("init".equals(action)) return init();
+        requireAccess();
+        switch(action) {
+            case "list": return list(required(args,"path"));
+            case "search": return search(required(args,"path"),required(args,"query"));
+            case "read": return read(required(args,"path"));
+            case "save": return save(required(args,"path"),required(args,"text"),
+                                      args.optBoolean("bom",false));
+            case "copy": return transfer(paths(args),required(args,"target"),false);
+            case "move": return transfer(paths(args),required(args,"target"),true);
+            case "rename": return rename(required(args,"path"),required(args,"name"));
+            case "mkdir": return mkdir(required(args,"path"),required(args,"name"));
+            case "recycle": return recycle(paths(args));
+            case "extract": return extract(context,required(args,"path"),required(args,"target"));
+            case "zip": return zip(paths(args),required(args,"target"));
+            default: throw new IOException("未实现的操作："+action);
+        }
+    }
+
+    private static void requireAccess() throws IOException {
+        if (!Environment.isExternalStorageManager())
+            throw new IOException("请先在系统设置授予 CFM“所有文件访问”权限，再返回应用");
+    }
+
+    private static File base() { return Environment.getExternalStorageDirectory(); }
+
+    private static File inside(String input) throws IOException {
+        if(input==null||input.trim().isEmpty())throw new IOException("路径不能为空");
+        File candidate=new File(input).getCanonicalFile();
+        File storage=base().getCanonicalFile();
+        String p=candidate.getPath(), root=storage.getPath();
+        if(!p.equals(root)&&!p.startsWith(root+File.separator))
+            throw new IOException("此 Android 预览版只访问内部共享存储："+root);
+        return candidate;
+    }
+
+    private static String required(JSONObject args,String key)throws Exception {
+        String val=args.optString(key,null);
+        if(val==null)throw new IOException("缺少参数："+key);
+        return val;
+    }
+    private static JSONArray paths(JSONObject args) throws IOException {
+        JSONArray paths=args.optJSONArray("paths");
+        if(paths==null||paths.length()==0||paths.length()>200)
+            throw new IOException("请选中 1～200 项");
+        return paths;
+    }
+
+    private static JSONObject init()throws Exception {
+        File home=base().getCanonicalFile();
+        File download=new File(home,"Download");
+        File docs=new File(home,"Documents");
+        return new JSONObject()
+            .put("home",home.getAbsolutePath())
+            .put("desktop",home.getAbsolutePath())
+            .put("documents",docs.isDirectory()?docs.getAbsolutePath():home.getAbsolutePath())
+            .put("downloads",download.isDirectory()?download.getAbsolutePath():home.getAbsolutePath())
+            .put("drives",new JSONArray().put(new JSONObject()
+                .put("path",home.getAbsolutePath()).put("label","手机内部存储")));
+    }
+
+    private static File[] sorted(File directory)throws IOException {
+        File[] files=directory.listFiles();
+        if(files==null)throw new IOException("此目录无法读取；Android/data 等目录仍受系统限制");
+        Arrays.sort(files,Comparator.comparing((File file)->!file.isDirectory())
+            .thenComparing(file->file.getName().toLowerCase(Locale.ROOT)));
+        return files;
+    }
+
+    private static String timestamp(long time) {
+        synchronized(STAMP) { return STAMP.format(new Date(time)); }
+    }
+
+    private static JSONObject list(String path)throws Exception {
+        File dir=inside(path);
+        if(!dir.isDirectory())throw new IOException("文件夹不存在或无读取权限："+dir.getPath());
+        File[] files=sorted(dir);
+        JSONArray items=new JSONArray();
+        for(int i=0;i<Math.min(files.length,MAX_LIST);i++) {
+            File f=files[i];
+            boolean folder=f.isDirectory();
+            items.put(new JSONObject()
+                .put("name",f.getName())
+                .put("path",f.getAbsolutePath())
+                .put("isDir",folder)
+                .put("isLink",Files.isSymbolicLink(f.toPath()))
+                .put("size",folder?0:f.length())
+                .put("modified",timestamp(f.lastModified())));
+        }
+        File parent=dir.equals(base().getCanonicalFile())?null:dir.getParentFile();
+        return new JSONObject()
+            .put("path",dir.getAbsolutePath())
+            .put("parent",parent==null?JSONObject.NULL:parent.getAbsolutePath())
+            .put("items",items)
+            .put("truncated",files.length>MAX_LIST);
+    }
+
+    private static JSONObject search(String path,String search)throws Exception {
+        if(search.trim().length()<2)throw new IOException("至少输入两个字符");
+        File start=inside(path);
+        if(!start.isDirectory())throw new IOException("目录不存在");
+        String term=search.toLowerCase(Locale.ROOT).trim();
+        JSONArray hits=new JSONArray();
+        ArrayDeque<File> queue=new ArrayDeque<>();
+        queue.add(start);
+        int scanned=0;
+        while(!queue.isEmpty()&&scanned<MAX_SEARCH&&hits.length()<MAX_SEARCH_RESULTS) {
+            File folder=queue.removeFirst();
+            if(!folder.canRead())continue;
+            File[] children=folder.listFiles();
+            if(children==null)continue;
+            for(File item:children) {
+                if(++scanned>MAX_SEARCH||hits.length()>=MAX_SEARCH_RESULTS)break;
+                if(Files.isSymbolicLink(item.toPath()))continue;
+                if(item.getName().toLowerCase(Locale.ROOT).contains(term))
+                    hits.put(new JSONObject().put("name",item.getName())
+                        .put("path",item.getAbsolutePath())
+                        .put("isDir",item.isDirectory()));
+                if(item.isDirectory() && insideRoot(item))queue.addLast(item);
+            }
+        }
+        return new JSONObject()
+            .put("results",hits).put("scanned",scanned)
+            .put("truncated",scanned>=MAX_SEARCH||hits.length()>=MAX_SEARCH_RESULTS);
+    }
+
+    private static boolean insideRoot(File f) {
+        try { inside(f.getPath()); return true; }
+        catch(Exception ex) { return false; }
+    }
+
+    private static File safeFile(String name) throws IOException {
+        File file=inside(name);
+        if(Files.isSymbolicLink(file.toPath()))
+            throw new IOException("预览版不处理符号链接");
+        if(file.getCanonicalFile().equals(base().getCanonicalFile()))
+            throw new IOException("不能修改存储根目录");
+        return file;
+    }
+
+    private static String cleanName(String raw)throws IOException {
+        String name=raw.trim();
+        if(name.isEmpty() || name.equals(".") || name.equals("..") ||
+            name.contains("/")||name.contains("\\")||name.indexOf('\0')>=0)
+            throw new IOException("文件名不合法");
+        return name;
+    }
+
+    private static String extension(String name) {
+        int dot=name.lastIndexOf('.');
+        return dot<0?"":name.substring(dot).toLowerCase(Locale.ROOT);
+    }
+
+    private static void textFile(File file)throws IOException {
+        if(!file.isFile() || !TEXT_EXTENSIONS.contains(extension(file.getName())))
+            throw new IOException("只允许编辑常见的纯文本文件");
+    }
+
+    private static JSONObject read(String path)throws Exception {
+        File file=safeFile(path);
+        textFile(file);
+        if(file.length()>MAX_TEXT)throw new IOException("纯文本编辑上限为 2MB");
+        ByteArrayOutputStream output=new ByteArrayOutputStream();
+        try(InputStream in=new FileInputStream(file)) {
+            byte[] chunk=new byte[8192];int n;
+            while((n=in.read(chunk))!=-1) {
+                if(output.size()+n>MAX_TEXT)throw new IOException("文件过大");
+                output.write(chunk,0,n);
+            }
+        }
+        byte[] bytes=output.toByteArray();
+        boolean bom=bytes.length>=3&&(bytes[0]&255)==239 &&
+            (bytes[1]&255)==187 && (bytes[2]&255)==191;
+        String text;
+        try {
+            text=StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes,bom?3:0,bytes.length-(bom?3:0))).toString();
+        } catch(CharacterCodingException error) {
+            throw new IOException("不是 UTF-8 编码，暂不支持自动转码");
+        }
+        String suffix=extension(file.getName());
+        return new JSONObject().put("path",file.getAbsolutePath())
+            .put("name",file.getName()).put("text",text).put("bom",bom)
+            .put("html",suffix.equals(".htm")||suffix.equals(".html"));
+    }
+
+    private static JSONObject save(String path,String text,boolean bom)throws Exception {
+        File file=safeFile(path);
+        textFile(file);
+        byte[] bytes=text.getBytes(StandardCharsets.UTF_8);
+        if(bytes.length>MAX_TEXT)throw new IOException("保存内容超过 2MB");
+        File backup=new File(file.getParentFile(),file.getName()+".cfm.bak");
+        copyFile(file,backup,true);
+        try(OutputStream out=new FileOutputStream(file,false)) {
+            if(bom)out.write(new byte[]{(byte)0xef,(byte)0xbb,(byte)0xbf});
+            out.write(bytes);
+        }
+        return new JSONObject().put("path",file.getAbsolutePath())
+            .put("backup",backup.getAbsolutePath());
+    }
+
+    private static JSONObject mkdir(String dir,String name)throws Exception {
+        File parent=inside(dir);
+        if(!parent.isDirectory())throw new IOException("文件夹不存在");
+        File target=inside(new File(parent,cleanName(name)).getPath());
+        if(target.exists()||!target.mkdir())throw new IOException("创建失败或名称已存在");
+        return new JSONObject().put("path",target.getAbsolutePath());
+    }
+
+    private static JSONObject rename(String path,String name)throws Exception {
+        File before=safeFile(path);
+        if(!before.exists())throw new IOException("找不到要重命名的文件");
+        File after=inside(new File(before.getParentFile(),cleanName(name)).getPath());
+        if(after.exists()||!before.renameTo(after))throw new IOException("重命名失败或目标名称已存在");
+        return new JSONObject().put("path",after.getAbsolutePath());
+    }
+
+    private static File unique(File directory,String original,boolean folder)throws IOException {
+        File file=new File(directory,original);
+        if(!file.exists())return file;
+        int dot=original.lastIndexOf('.');
+        String stem=folder||dot<=0?original:original.substring(0,dot);
+        String suffix=folder||dot<=0?"":original.substring(dot);
+        for(int i=2;i<10000;i++){
+            file=new File(directory,stem+" ("+i+")"+suffix);
+            if(!file.exists())return file;
+        }
+        throw new IOException("目录中的同名文件太多");
+    }
+
+    private static boolean isChild(File child,File parent)throws IOException {
+        String p=parent.getCanonicalPath()+File.separator;
+        String c=child.getCanonicalPath()+File.separator;
+        return c.startsWith(p);
+    }
+
+    private static JSONObject transfer(JSONArray paths,String target,boolean move)throws Exception {
+        File dest=inside(target);
+        if(!dest.isDirectory())throw new IOException("另一栏目标目录不存在");
+        int count=0;
+        for(int i=0;i<paths.length();i++){
+            File source=safeFile(paths.getString(i));
+            if(!source.exists())throw new IOException("文件不存在："+source.getName());
+            if(source.isDirectory()&&isChild(dest,source))
+                throw new IOException("不能将文件夹放到自己的子目录");
+            File result=inside(unique(dest,source.getName(),source.isDirectory()).getPath());
+            if(move){
+                if(!source.renameTo(result))throw new IOException("移动失败。不同存储卷需要复制后再处理");
+            } else if(source.isDirectory()) {
+                copyTree(source,result,0,new int[]{0});
+            } else copyFile(source,result,false);
+            count++;
+        }
+        return new JSONObject().put("count",count).put("operation",move?"移动":"复制");
+    }
+
+    private static void copyFile(File source,File dest,boolean overwrite)throws IOException {
+        if(Files.isSymbolicLink(source.toPath()))throw new IOException("不复制符号链接");
+        if(dest.exists()&&!overwrite)throw new IOException("目标文件已存在");
+        try(InputStream in=new BufferedInputStream(new FileInputStream(source));
+            OutputStream out=new BufferedOutputStream(new FileOutputStream(dest,false))){
+            byte[] buf=new byte[32768];int read;
+            while((read=in.read(buf))!=-1)out.write(buf,0,read);
+        }
+    }
+
+    private static void copyTree(File source,File dest,int depth,int[] count)throws IOException {
+        if(depth>MAX_COPY_DEPTH||++count[0]>MAX_ZIP_FILES)
+            throw new IOException("复制项目超过安全限制");
+        if(Files.isSymbolicLink(source.toPath()))throw new IOException("不复制符号链接");
+        if(source.isDirectory()){
+            if(!dest.mkdir())throw new IOException("目标文件夹创建失败");
+            File[] entries=source.listFiles();
+            if(entries==null)throw new IOException("无法读取："+source.getName());
+            for(File item:entries)copyTree(item,new File(dest,item.getName()),depth+1,count);
+        } else copyFile(source,dest,false);
+    }
+
+    private static JSONObject recycle(JSONArray paths)throws Exception {
+        File trash=inside(new File(base(),".CFM_RecycleBin").getAbsolutePath());
+        if(!trash.exists()&&!trash.mkdir())throw new IOException("无法创建 CFM 回收站文件夹");
+        int count=0;
+        for(int i=0;i<paths.length();i++){
+            File source=safeFile(paths.getString(i));
+            if(!source.exists())throw new IOException("要删除的文件不存在");
+            if(isChild(trash,source))throw new IOException("不能回收包含回收站的父文件夹");
+            if(source.getParentFile().equals(trash))throw new IOException("文件已经在 CFM 回收站中");
+            File moved=unique(trash,source.getName(),source.isDirectory());
+            if(!source.renameTo(moved))throw new IOException("移动到 CFM 回收站失败");
+            count++;
+        }
+        return new JSONObject().put("count",count);
+    }
+
+    private static JSONObject extract(Context context,String path,String target)throws Exception {
+        File archive=safeFile(path);
+        File destination=inside(target);
+        if(!destination.isDirectory())throw new IOException("解压目标目录不存在");
+        if(!ArchiveExtractor.supported(archive))
+            throw new IOException("这个压缩格式暂不受 Android 解压引擎支持");
+        File folder=ArchiveExtractor.extract(archive,destination,context.getCacheDir());
+        return new JSONObject().put("folder",folder.getAbsolutePath()).put("files",1);
+    }
+
+    private static JSONObject zip(JSONArray paths,String target)throws Exception {
+        File destination=inside(target);
+        if(!destination.isDirectory())throw new IOException("目标目录不存在");
+        String stamp=new SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(new Date());
+        File zip=unique(destination,"CFM-"+stamp+".zip",false);
+        int[] count={0};
+        long[] bytes={0};
+        try(ZipOutputStream out=new ZipOutputStream(
+            new BufferedOutputStream(new FileOutputStream(zip)))) {
+            for(int i=0;i<paths.length();i++) {
+                File source=safeFile(paths.getString(i));
+                if(source.isDirectory()&&isChild(zip,source))
+                    throw new IOException("不能把 ZIP 创建在源文件夹内部");
+                zipTree(source,source.getName(),out,0,count,bytes);
+            }
+        } catch(Exception error) {
+            zip.delete();
+            throw error;
+        }
+        return new JSONObject().put("path",zip.getAbsolutePath());
+    }
+
+    private static void zipTree(File src,String name,ZipOutputStream out,
+                                int depth,int[] count,long[] bytes)throws Exception {
+        if(depth>MAX_COPY_DEPTH||++count[0]>MAX_ZIP_FILES)
+            throw new IOException("压缩项目数量超限");
+        if(Files.isSymbolicLink(src.toPath()))throw new IOException("不支持符号链接压缩");
+        if(src.isDirectory()) {
+            File[] entries=src.listFiles();
+            if(entries==null)throw new IOException("无权读取："+src.getName());
+            if(entries.length==0){
+                out.putNextEntry(new ZipEntry(name.replace('\\','/')+"/"));
+                out.closeEntry();
+            }
+            for(File f:entries)zipTree(f,name+"/"+f.getName(),out,depth+1,count,bytes);
+        } else if(src.isFile()) {
+            out.putNextEntry(new ZipEntry(name.replace('\\','/')));
+            try(InputStream in=new BufferedInputStream(new FileInputStream(src))){
+                byte[] buf=new byte[32768];int n;
+                while((n=in.read(buf))!=-1){
+                    bytes[0]+=n;
+                    if(bytes[0]>MAX_ZIP_SIZE)throw new IOException("压缩源文件总量超过2GB限制");
+                    out.write(buf,0,n);
+                }
+            }
+            out.closeEntry();
+        } else throw new IOException("不是常规文件："+src.getName());
+    }
+}
