@@ -107,3 +107,17 @@ button.danger:hover{color:#ffc7c7;background:#4a2d35}
 .nav-toolbar button{flex:1;display:flex;align-items:center;justify-content:center;gap:12px;height:40px;font-size:25px;line-height:1;color:#c6c6ca;min-width:0}
 .nav-toolbar button span{font-size:12px;white-space:nowrap;color:#bebec3}
 .nav-toolbar button:hover{color:#f4f6f8;background:#343c45}
+
+/* V0.5: desktop-first toolbar rather than mobile bottom bar. */
+.quickbar{height:47px;min-height:47px;gap:3px}
+.quickbar .nav-small{min-width:31px;padding:5px 9px;font-size:20px;font-weight:600}
+.quickbar #nav-sync,.quickbar #nav-plus{border:1px solid #414147;background:#29292c}
+.quickbar #nav-sync:hover,.quickbar #nav-plus:hover{background:#354251}
+.actions{height:41px;min-height:41px}
+.actions button{font-size:12px}
+.actions #send-trash{color:#dbafb2}
+.status{height:30px}
+.search-input-row{display:flex;align-items:center;gap:8px;padding:12px 16px;background:#2b2b2f;border-bottom:1px solid var(--line)}
+#search-query{min-width:0;flex:1;background:#171719;border:1px solid #55565a;border-radius:5px;color:var(--text);padding:9px 12px;font-size:13px}
+#search-submit{background:#285d8b;border:1px solid #3679ad;padding:9px 22px}
+#search-submit:disabled{opacity:.6}
