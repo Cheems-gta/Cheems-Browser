@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.1</small></span></div>
+      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.2</small></span></div>
       <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
     </header>
 
@@ -19,6 +19,7 @@
       <button class="quick" data-quick="downloads">↓ 下载</button>
       <button class="quick" data-quick="documents">▤ 文档</button>
       <select id="drive" title="选择磁盘"><option value="">▰ 磁盘</option></select>
+      <button id="bookmarks" title="已收藏的文件夹">★ 书签</button>
       <div class="spacer"></div>
       <button id="search" title="递归搜索当前栏文件名">⌕ 搜索</button>
       <button id="refresh" title="刷新（F5）">⟳ 刷新</button>
@@ -31,6 +32,7 @@
       <button id="new" title="在当前栏创建文件夹">＋ 文件夹</button>
       <button id="rename" title="重命名（F2）">✎ 重命名</button>
       <button id="delete" class="danger" title="移入 Windows 回收站（Delete）">♲ 回收站</button>
+      <button id="share" title="通过系统支持的应用分享所选文件">↗ 分享</button>
       <span class="divider"></span>
       <button id="edit" title="打开文本/HTML 源码编辑">〈/〉 编辑</button>
       <button id="extract" title="ZIP、7z、RAR、TAR 等解压到另一栏">⇣ 解压</button>
