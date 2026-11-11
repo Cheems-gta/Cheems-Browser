@@ -111,6 +111,38 @@ function entryIcon(item) {
   return {symbol:"▤",type:"file"};
 }
 
+// Android preview touch input: emulate a desktop right click after a hold.
+// A normal tap still selects a file and scrolling remains unchanged.
+let suppressTouchClickUntil = 0;
+function showFileActionsAt(index, item, x, y) {
+  const pane = state.panes[index];
+  switchActive(index);
+  if (!pane.selected.has(item.path)) {
+    pane.selected.clear();
+    pane.selected.add(item.path);
+  }
+  showSelection(index);
+  contextMenu(x, y, item);
+}
+function mobileActionsForSelection() {
+  const pane = activePane();
+  const selected = [...pane.selected];
+  if (!selected.length) {
+    toast("先点一下选中文件，再点「⋮ 文件操作」；也可以直接长按文件。");
+    return;
+  }
+  if (selected.length !== 1) {
+    toast("文件操作菜单一次对应一个文件；批量复制、移动可使用顶部按钮。");
+    return;
+  }
+  const item = pane.items.find(v => v.path === selected[0]);
+  if (!item) { toast("选中的文件已变化，请刷新目录"); return; }
+  const anchor = document.getElementById("mobile-file-actions");
+  const rect = anchor ? anchor.getBoundingClientRect() : null;
+  const x = rect ? rect.left : window.innerWidth / 2;
+  const y = rect ? rect.bottom + 3 : window.innerHeight / 3;
+  contextMenu(x, y, item);
+}
 function render(index) {
   const pane=state.panes[index], target=$("#entries"+index);
   const filter=$("#filter"+index).value.trim().toLowerCase();
@@ -161,6 +193,11 @@ function render(index) {
     row.append(nameCell,modified,size);
 
     row.addEventListener("click",e=>{
+      if (Date.now() < suppressTouchClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       switchActive(index);
       if(e.ctrlKey) {
         if(pane.selected.has(item.path)) pane.selected.delete(item.path);
@@ -178,13 +215,49 @@ function render(index) {
     });
     row.addEventListener("contextmenu",e=>{
       e.preventDefault();
-      switchActive(index);
-      if(!pane.selected.has(item.path)) {
-        pane.selected.clear(); pane.selected.add(item.path);
-      }
-      showSelection(index);
-      contextMenu(e.clientX,e.clientY,item);
+      // The Android WebView may emit its own contextmenu after our hold timer.
+      // Don't show the same menu twice.
+      if (Date.now() < suppressTouchClickUntil) return;
+      showFileActionsAt(index,item,e.clientX,e.clientY);
     });
+    if (isAndroidBuild()) {
+      let holdTimer = null;
+      let touchX=0, touchY=0, holdTriggered=false;
+      const cancelHold = () => {
+        if (holdTimer !== null) clearTimeout(holdTimer);
+        holdTimer = null;
+      };
+      row.addEventListener("touchstart", e => {
+        cancelHold();
+        holdTriggered=false;
+        if (e.touches.length !== 1) return;
+        touchX=e.touches[0].clientX;
+        touchY=e.touches[0].clientY;
+        const x=touchX,y=touchY;
+        holdTimer=setTimeout(() => {
+          holdTimer=null;
+          holdTriggered=true;
+          suppressTouchClickUntil=Date.now()+900;
+          showFileActionsAt(index,item,x,y);
+        }, 480);
+      }, {passive:true});
+      row.addEventListener("touchmove",e => {
+        if (e.touches.length!==1 ||
+            Math.abs(e.touches[0].clientX-touchX)>12 ||
+            Math.abs(e.touches[0].clientY-touchY)>12) {
+          cancelHold();
+        }
+      }, {passive:true});
+      row.addEventListener("touchend",e => {
+        cancelHold();
+        if (holdTriggered) {
+          e.preventDefault();
+          holdTriggered=false;
+        }
+      }, {passive:false});
+      row.addEventListener("touchcancel",cancelHold,{passive:true});
+      row.addEventListener("dragstart",e=>e.preventDefault());
+    }
     fragment.appendChild(row);
   }
 
@@ -607,6 +680,8 @@ function contextMenu(x,y,item) {
 }
 
 function wire() {
+  const touchActions = $("#mobile-file-actions");
+  if (touchActions) touchActions.addEventListener("click",mobileActionsForSelection);
   $("#refresh").addEventListener("click",refreshBoth);
   const terminalButton=$("#terminal-button");
   if(terminalButton)terminalButton.addEventListener("click",()=>openTerminal(activePane().path));
