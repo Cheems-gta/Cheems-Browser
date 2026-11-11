@@ -1,4 +1,7 @@
 using System;
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -41,6 +44,11 @@ public static class FileOperations
         "recycle" => Recycle(Paths(args)),
         "extract" => Extract(S(args, "path"), S(args, "target")),
         "zip" => MakeZip(Paths(args), S(args, "target")),
+        "properties" => Properties(S(args, "path")),
+        "hash" => FileHash(S(args, "path")),
+        "signature" => SignatureInfo(S(args, "path")),
+        "openWith" => OpenWith(S(args, "path")),
+        "share" => ShareThroughExplorer(Paths(args)),
         _ => throw new ArgumentException("不支持的操作：" + action)
     };
 
@@ -67,6 +75,101 @@ public static class FileOperations
         if (result.Length == 0 || result.Length > 200)
             throw new IOException("请选择 1～200 个文件或文件夹");
         return result;
+    }
+
+
+    private static object Properties(string input)
+    {
+        string path = Path.GetFullPath(input);
+        var attributes = File.GetAttributes(path);
+        bool folder = attributes.HasFlag(FileAttributes.Directory);
+        FileSystemInfo info = folder ? new DirectoryInfo(path) : new FileInfo(path);
+        return new
+        {
+            name = info.Name,
+            path = info.FullName,
+            kind = folder ? "文件夹" : Path.GetExtension(path).TrimStart('.').ToUpperInvariant() + " 文件",
+            isDir = folder,
+            size = folder ? 0L : ((FileInfo)info).Length,
+            created = info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss"),
+            modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+            @readonly = attributes.HasFlag(FileAttributes.ReadOnly)
+        };
+    }
+
+    private static object FileHash(string input)
+    {
+        string path = Path.GetFullPath(input);
+        if (!File.Exists(path)) throw new IOException("SHA-256 只支持普通文件");
+        if (File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint))
+            throw new IOException("无法为链接文件计算哈希");
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        byte[] digest = SHA256.HashData(file);
+        return new { sha256 = Convert.ToHexString(digest).ToLowerInvariant() };
+    }
+
+    private static object SignatureInfo(string input)
+    {
+        string path = Path.GetFullPath(input);
+        if (!File.Exists(path)) throw new FileNotFoundException(path);
+        string ext = Path.GetExtension(path);
+        if (!new[] { ".exe", ".dll", ".msi" }.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            throw new IOException("仅查看 EXE / DLL / MSI 的证书信息");
+        try
+        {
+            using var signer = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+            // This only reads the embedded certificate; it does NOT verify the
+            // Authenticode digest, timestamp chain or current code-signing trust.
+            return new
+            {
+                status = "发现嵌入式签名证书（尚未验证 Authenticode 文件完整性）",
+                subject = signer.Subject,
+                issuer = signer.Issuer,
+                validUntil = signer.NotAfter.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+        }
+        catch (CryptographicException)
+        {
+            return new { status = "没有找到可读取的嵌入式签名证书（并不直接代表恶意）" };
+        }
+    }
+
+    private static object OpenWith(string input)
+    {
+        string path = Path.GetFullPath(input);
+        if (!File.Exists(path)) throw new FileNotFoundException(path);
+        // The standard Windows Open With chooser. This command never
+        // directly executes the chosen EXE file itself.
+        string rundll = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System), "rundll32.exe");
+        var start = new ProcessStartInfo
+        {
+            FileName = rundll,
+            UseShellExecute = false,
+            CreateNoWindow = false
+        };
+        start.ArgumentList.Add("shell32.dll,OpenAs_RunDLL");
+        start.ArgumentList.Add(path);
+        Process.Start(start);
+        return new { message = "已请求 Windows 显示“打开方式”选择器" };
+    }
+
+    private static object ShareThroughExplorer(string[] sources)
+    {
+        if (sources.Length != 1)
+            throw new IOException("Windows 分享请先选中一个文件");
+        string path = Path.GetFullPath(sources[0]);
+        if (!File.Exists(path))
+            throw new IOException("请选中文件。文件夹可先压缩为 ZIP 再分享");
+        // We don't have a WeChat/QQ desktop SDK: select the file in Explorer
+        // so the user can drag it to a conversation or choose Send/Share there.
+        string explorer = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        var start = new ProcessStartInfo { FileName = explorer, UseShellExecute = true };
+        start.ArgumentList.Add("/select,");
+        start.ArgumentList.Add(path);
+        Process.Start(start);
+        return new { message = "已在资源管理器中定位文件；可拖入微信/QQ聊天窗口或使用系统分享功能" };
     }
 
     private static object InitialState()
