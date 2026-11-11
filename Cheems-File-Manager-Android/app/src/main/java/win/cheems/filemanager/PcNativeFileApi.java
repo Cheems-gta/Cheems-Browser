@@ -1,5 +1,12 @@
 package win.cheems.filemanager;
 
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
+import android.util.Base64;
+import android.util.LruCache;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ClipData;
@@ -65,6 +72,7 @@ final class PcNativeFileApi {
         if ("init".equals(action)) return init();
         requireAccess();
         switch(action) {
+            case "icons": return icons(context,paths(args));
             case "list": return list(required(args,"path"));
             case "search": return search(required(args,"path"),required(args,"query"));
             case "read": return read(required(args,"path"));
@@ -242,6 +250,80 @@ final class PcNativeFileApi {
 
     private static String timestamp(long time) {
         synchronized(STAMP) { return STAMP.format(new Date(time)); }
+    }
+
+
+    private static final LruCache<String,String> ICON_CACHE = new LruCache<>(180);
+    private static final String NO_ICON = "-";
+
+    /**
+     * APK: use the actual archive's AndroidManifest.xml icon resource.
+     * Android/data, obb, media: resolve the installed package folder name.
+     * Return small PNG data URIs only; no Internet or private app data needed.
+     * Android OS storage restrictions on Android/data remain unchanged.
+     */
+    private static JSONObject icons(Context context,JSONArray requested) throws Exception {
+        if(requested.length()>24)
+            throw new IOException("单次图标请求最多 24 项");
+        JSONObject result=new JSONObject();
+        PackageManager pm=context.getPackageManager();
+        for(int i=0;i<requested.length();i++) {
+            String raw=requested.optString(i,"");
+            if(raw.isEmpty())continue;
+            File file;
+            try { file=inside(raw); }
+            catch(Exception denied){continue;}
+            String key=file.getAbsolutePath();
+            String cached=ICON_CACHE.get(key);
+            if(cached==null) {
+                Drawable drawable=null;
+                try {
+                    if(file.isDirectory()) {
+                        File parent=file.getParentFile();
+                        String p=parent==null?"":parent.getAbsolutePath().replace('\\','/');
+                        // Only package-like folder names under standard Android directories.
+                        if(p.endsWith("/Android/data") || p.endsWith("/Android/obb") ||
+                           p.endsWith("/Android/media")) {
+                            if(file.getName().matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))
+                                drawable=pm.getApplicationIcon(file.getName());
+                        }
+                    } else if(file.isFile() && file.length()<150L*1024*1024 &&
+                        extension(file.getName()).equals(".apk")) {
+                        android.content.pm.PackageInfo archive=
+                            pm.getPackageArchiveInfo(file.getAbsolutePath(),0);
+                        if(archive!=null && archive.applicationInfo!=null) {
+                            ApplicationInfo app=archive.applicationInfo;
+                            app.sourceDir=file.getAbsolutePath();
+                            app.publicSourceDir=file.getAbsolutePath();
+                            drawable=app.loadIcon(pm);
+                        }
+                    }
+                } catch(Exception ignored) {
+                    // Missing, not installed, restricted, or malformed APK:
+                    // use the normal file/folder icon.
+                }
+                cached=drawable==null?NO_ICON:iconToDataUri(drawable);
+                ICON_CACHE.put(key,cached);
+            }
+            if(!NO_ICON.equals(cached))result.put(key,cached);
+        }
+        return new JSONObject().put("icons",result);
+    }
+
+    private static String iconToDataUri(Drawable drawable) {
+        try {
+            final int size=48;
+            Bitmap bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);
+            Canvas canvas=new Canvas(bitmap);
+            drawable.setBounds(0,0,size,size);
+            drawable.draw(canvas);
+            ByteArrayOutputStream data=new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.PNG,100,data);
+            bitmap.recycle();
+            if(data.size()<100 || data.size()>45*1024)return NO_ICON;
+            return "data:image/png;base64,"+
+                Base64.encodeToString(data.toByteArray(),Base64.NO_WRAP);
+        }catch(Exception ex){return NO_ICON;}
     }
 
     private static JSONObject list(String path)throws Exception {
