@@ -73,6 +73,7 @@ public partial class MainWindow : Window
             "index.html" => "text/html; charset=utf-8",
             "style.css" => "text/css; charset=utf-8",
             "app.js" => "text/javascript; charset=utf-8",
+            "icon.webp" => "image/webp",
             _ => null
         };
         if (mime is null)
