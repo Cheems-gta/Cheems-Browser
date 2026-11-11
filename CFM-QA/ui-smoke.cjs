@@ -70,6 +70,7 @@ function mockAction(action,args){
     ? {path:trash,message:"已打开 CFM 回收站"}
     : {message:"已在 Windows 资源管理器中打开回收站"};
   case "restore":return {count:args.paths.length,message:"已恢复"};
+  case "permanentDelete":return {count:args.paths.length,message:"已永久删除"};
   case "recycle":return {count:args.paths.length,message:"已移入回收站"};
   case "copy":case "move":return {count:args.paths.length};
   case "mkdir":case "newFile":case "newHtml":
@@ -109,10 +110,12 @@ async function test(label,fn){
   await waitFor(()=>w.document.querySelector("#path0")?.value===home);
   await test("initial two independent panes",async()=>{
     assert.equal(w.document.querySelector("#path0").value,home);
-    assert.equal(w.document.querySelector("#path1").value,downloads);
+    assert.equal(w.document.querySelector("#path1").value,home);
     assert.ok(w.document.querySelectorAll("#entries0 .entry").length>=2);
   });
-  await test("per-pane path synchronization preserves active pane",async()=>{
+  await test("right pane aligns with left even if right was active",async()=>{
+    await setPath(1,downloads);
+    assert.equal(w.document.querySelector("#path1").value,downloads);
     await w.CFMNav.sync();
     await waitFor(()=>w.document.querySelector("#path1").value===home);
     assert.equal(w.document.querySelector("#path0").value,home);
