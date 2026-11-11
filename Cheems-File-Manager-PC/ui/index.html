@@ -104,7 +104,11 @@
   <div class="overlay hidden" id="search-overlay">
     <section class="dialog search-dialog">
       <div class="dialog-title"><strong>搜索结果</strong><button id="close-search">×</button></div>
-      <div id="search-summary" class="search-summary"></div>
+      <div class="search-input-row">
+        <input id="search-query" type="search" placeholder="输入至少两个字符，搜索文件名…" autocomplete="off" spellcheck="false">
+        <button id="search-submit" class="primary">搜索</button>
+      </div>
+      <div id="search-summary" class="search-summary">输入关键词开始搜索</div>
       <div id="search-results" class="search-results"></div>
     </section>
   </div>
