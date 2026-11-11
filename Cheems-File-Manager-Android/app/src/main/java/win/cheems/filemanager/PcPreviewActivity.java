@@ -153,6 +153,30 @@ public final class PcPreviewActivity extends Activity {
                     String action=req.getString("action");
                     JSONObject arguments=req.optJSONObject("args");
                     if(arguments==null)arguments=new JSONObject();
+                    if ("share".equals(action)) {
+                        // Android chooser must be launched on the main thread.
+                        final int replyId = id;
+                        final JSONObject shareArgs = arguments;
+                        main.post(() -> {
+                            try {
+                                Intent share = PcNativeFileApi.shareIntent(
+                                    PcPreviewActivity.this, shareArgs);
+                                startActivity(Intent.createChooser(share,
+                                    "分享给微信 / QQ / 其他应用"));
+                                send(new JSONObject().put("id",replyId).put("ok",true)
+                                    .put("data",new JSONObject()
+                                        .put("message","已打开系统分享菜单")));
+                            } catch (Exception shareFailure) {
+                                try {
+                                    send(new JSONObject().put("id",replyId)
+                                        .put("ok",false)
+                                        .put("error",shareFailure.getMessage()==null ?
+                                            "无法打开系统分享菜单" : shareFailure.getMessage()));
+                                } catch(Exception ignored) { }
+                            }
+                        });
+                        return;
+                    }
                     JSONObject data=PcNativeFileApi.execute(
                         PcPreviewActivity.this, action, arguments);
                     JSONObject reply=new JSONObject()
