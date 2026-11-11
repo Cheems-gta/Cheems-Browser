@@ -1,9 +1,10 @@
-name: CFM PC V0.4 - Build Windows EXE
+name: CFM PC V0.5 - QA + Windows EXE
 on:
   push:
-    branches: [cfm-pc-web-v0.4]
+    branches: [cfm-pc-web-v0.5]
     paths:
       - "Cheems-File-Manager-PC/**"
+      - "CFM-QA/**"
       - ".github/workflows/cfm-pc-build.yml"
   workflow_dispatch:
 
@@ -11,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-test:
     runs-on: windows-latest
     steps:
       - name: Checkout source
@@ -20,13 +21,23 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install UI test dependency
+        run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0
+      - name: Test real PC HTML+JS interactions in simulated browser
+        run: node CFM-QA/ui-smoke.cjs pc
+      - name: Windows filesystem integration tests
+        run: dotnet run --project ./CFM-QA/CFM.QA.csproj -c Release
       - name: Publish standalone Windows x64 EXE
         shell: pwsh
         run: dotnet publish ./Cheems-File-Manager-PC/CheemsFileManagerPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ./cfm-pc-output
-      - name: Upload build
+      - name: Upload verified build
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFileManager-PC-V0.4-win-x64
+          name: CheemsFileManager-PC-V0.5-QA-win-x64
           path: ./cfm-pc-output/**
           if-no-files-found: error
           retention-days: 30
