@@ -70,6 +70,7 @@ function mockAction(action,args){
     ? {path:trash,message:"已打开 CFM 回收站"}
     : {message:"已在 Windows 资源管理器中打开回收站"};
   case "restore":return {count:args.paths.length,message:"已恢复"};
+  case "permanentDelete":return {count:args.paths.length,message:"已永久删除"};
   case "recycle":return {count:args.paths.length,message:"已移入回收站"};
   case "copy":case "move":return {count:args.paths.length};
   case "mkdir":case "newFile":case "newHtml":
@@ -109,10 +110,12 @@ async function test(label,fn){
   await waitFor(()=>w.document.querySelector("#path0")?.value===home);
   await test("initial two independent panes",async()=>{
     assert.equal(w.document.querySelector("#path0").value,home);
-    assert.equal(w.document.querySelector("#path1").value,downloads);
+    assert.equal(w.document.querySelector("#path1").value,home);
     assert.ok(w.document.querySelectorAll("#entries0 .entry").length>=2);
   });
-  await test("per-pane path synchronization preserves active pane",async()=>{
+  await test("right pane aligns with left even if right was active",async()=>{
+    await setPath(1,downloads);
+    assert.equal(w.document.querySelector("#path1").value,downloads);
     await w.CFMNav.sync();
     await waitFor(()=>w.document.querySelector("#path1").value===home);
     assert.equal(w.document.querySelector("#path0").value,home);
@@ -162,6 +165,31 @@ async function test(label,fn){
     w.document.querySelector("#entries0 .entry[data-path]").click();
     restore.click();
     await waitFor(()=>requests.some(x=>x.action==="restore"));
+  });
+  await test("trash item long press offers permanent delete & confirmation flow",async()=>{
+    w.document.querySelector("#delete").click();
+    await waitFor(()=>w.document.querySelector("#path0").value===trash);
+    const row=w.document.querySelector("#entries0 .entry[data-path]");
+    assert.ok(row,"No trashed file to test");
+    row.dispatchEvent(new w.MouseEvent("contextmenu",{
+      bubbles:true,cancelable:true,clientX:50,clientY:50
+    }));
+    const menu=w.document.querySelector("#context");
+    assert.match(menu.textContent,/永久删除/);
+    assert.match(menu.textContent,/恢复/);
+    assert.ok(!menu.textContent.includes("移入回收站"));
+    const action=[...menu.querySelectorAll("button")].find(e=>e.textContent.includes("永久删除"));
+    action.click();
+    await waitFor(()=>requests.some(x=>x.action==="permanentDelete"));
+    assert.deepEqual(requests.find(x=>x.action==="permanentDelete").args.paths,
+      [trash+"/deleted.txt"]);
+  });
+  await test("permanent delete button only appears inside CFM trash",async()=>{
+    await setPath(0,downloads);
+    assert.ok(w.document.querySelector("#permanent-trash").classList.contains("hidden"));
+    w.document.querySelector("#delete").click();
+    await waitFor(()=>w.document.querySelector("#path0").value===trash);
+    assert.ok(!w.document.querySelector("#permanent-trash").classList.contains("hidden"));
   });
   await test("plus menu opens and creates an empty file",async()=>{
     w.CFMNav.plus();
