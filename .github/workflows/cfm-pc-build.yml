@@ -1,7 +1,7 @@
-name: CFM PC V0.7 - Custom icon + QA + Windows EXE
+name: CFM PC V0.8 - Custom icon + QA + Windows EXE
 on:
   push:
-    branches: [cfm-pc-web-v0.7]
+    branches: [cfm-pc-web-v0.8]
     paths:
       - "Cheems-File-Manager-PC/**"
       - "CFM-QA/**"
@@ -43,7 +43,7 @@ jobs:
       - name: Upload verified build
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFileManager-PC-V0.7-Icon-win-x64
+          name: CheemsFileManager-PC-V0.8-NativeIcons-win-x64
           path: ./cfm-pc-output/**
           if-no-files-found: error
           retention-days: 30
