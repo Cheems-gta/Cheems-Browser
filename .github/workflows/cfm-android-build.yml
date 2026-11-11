@@ -1,7 +1,7 @@
-name: CFM Android V0.7 - QA + APK
+name: CFM Android V0.8 - QA + APK
 on:
   push:
-    branches: [cfm-pc-android-preview-v0.7]
+    branches: [cfm-pc-android-preview-v0.8]
     paths:
       - "Cheems-File-Manager-Android/**"
       - "CFM-QA/**"
@@ -47,7 +47,7 @@ jobs:
       - name: Upload verified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFM-PC-UI-Android-Preview-V0.7-QA-APK
+          name: CheemsFM-PC-UI-Android-Preview-V0.8-QA-APK
           path: Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
