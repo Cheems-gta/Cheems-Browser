@@ -181,8 +181,8 @@ async function test(label,fn){
     const action=[...menu.querySelectorAll("button")].find(e=>e.textContent.includes("永久删除"));
     action.click();
     await waitFor(()=>requests.some(x=>x.action==="permanentDelete"));
-    assert.deepEqual(requests.find(x=>x.action==="permanentDelete").args.paths,
-      [trash+"/deleted.txt"]);
+    assert.equal(requests.find(x=>x.action==="permanentDelete").args.paths.join(","),
+      trash+"/deleted.txt");
   });
   await test("permanent delete button only appears inside CFM trash",async()=>{
     await setPath(0,downloads);
