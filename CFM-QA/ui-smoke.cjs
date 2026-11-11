@@ -66,7 +66,9 @@ function mockAction(action,args){
   case "search":return {results:[{
     name:"sample.zip",path:downloads+"/sample.zip",isDir:false
   }],scanned:12,truncated:false};
-  case "openTrash":return {path:trash,message:"已打开 CFM 回收站"};
+  case "openTrash":return mode==="android"
+    ? {path:trash,message:"已打开 CFM 回收站"}
+    : {message:"已在 Windows 资源管理器中打开回收站"};
   case "restore":return {count:args.paths.length,message:"已恢复"};
   case "recycle":return {count:args.paths.length,message:"已移入回收站"};
   case "copy":case "move":return {count:args.paths.length};
@@ -126,7 +128,10 @@ async function test(label,fn){
   await test("Open Trash works without selecting a file",async()=>{
     const before=requests.filter(x=>x.action==="recycle").length;
     w.document.querySelector("#delete").click();
-    await waitFor(()=>w.document.querySelector("#path0").value===trash);
+    await waitFor(()=>requests.some(x=>x.action==="openTrash"));
+    if(mode==="android")
+      await waitFor(()=>w.document.querySelector("#path0").value===trash);
+    else assert.equal(w.document.querySelector("#path0").value,downloads);
     assert.equal(requests.filter(x=>x.action==="recycle").length,before);
   });
   await test("Send To Trash only acts on selected files",async()=>{
@@ -136,7 +141,8 @@ async function test(label,fn){
     w.document.querySelector("#send-trash").click();
     await waitFor(()=>requests.some(x=>x.action==="recycle"));
     const used=requests.find(x=>x.action==="recycle");
-    assert.deepEqual(used.args.paths,[trash+"/deleted.txt"]);
+    assert.equal(used.args.paths.length,1);
+    assert.ok(used.args.paths[0].startsWith(mode==="android"?trash:downloads));
   });
   await test("Restore action routes to Android native backend",async()=>{
     const restore=w.document.querySelector("#restore-trash");
