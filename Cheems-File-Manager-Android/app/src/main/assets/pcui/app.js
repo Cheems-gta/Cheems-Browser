@@ -63,7 +63,7 @@ const activePane = () => state.panes[state.active];
 function switchActive(n) {
   state.active=n;
   updateTrashButtons();
-  $(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
+  document.querySelectorAll(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
   return state.panes[n];
 }
 function formatBytes(bytes) {
