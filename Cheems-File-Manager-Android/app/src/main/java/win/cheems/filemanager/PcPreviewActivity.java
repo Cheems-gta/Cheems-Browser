@@ -13,6 +13,10 @@ import android.provider.Settings;
 import android.view.WindowInsets;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.JsResult;
+import android.webkit.JsPromptResult;
+import android.widget.EditText;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -69,6 +73,55 @@ public final class PcPreviewActivity extends Activity {
         settings.setDisplayZoomControls(false);
         web.setInitialScale(0);
         web.addJavascriptInterface(new NativeBridge(), "AndroidFileApi");
+        // The PC UI also uses alert()/confirm()/prompt() for file operations.
+        // Android WebView needs WebChromeClient for these to actually appear.
+        web.setWebChromeClient(new WebChromeClient() {
+            private boolean trusted(String url) {
+                return url != null && url.startsWith(BASE);
+            }
+            @Override public boolean onJsAlert(WebView view,String url,String message,
+                                                JsResult result) {
+                if (!trusted(url)) {result.cancel(); return true;}
+                new AlertDialog.Builder(PcPreviewActivity.this)
+                    .setTitle("Cheems File Manager")
+                    .setMessage(message)
+                    .setPositiveButton("确定",(dialog,which)->result.confirm())
+                    .setOnCancelListener(dialog->result.cancel())
+                    .show();
+                return true;
+            }
+            @Override public boolean onJsConfirm(WebView view,String url,String message,
+                                                  JsResult result) {
+                if (!trusted(url)) {result.cancel(); return true;}
+                new AlertDialog.Builder(PcPreviewActivity.this)
+                    .setTitle("确认操作")
+                    .setMessage(message)
+                    .setNegativeButton("取消",(dialog,which)->result.cancel())
+                    .setPositiveButton("确定",(dialog,which)->result.confirm())
+                    .setOnCancelListener(dialog->result.cancel())
+                    .show();
+                return true;
+            }
+            @Override public boolean onJsPrompt(WebView view,String url,String message,
+                                                 String defaultValue,JsPromptResult result) {
+                if (!trusted(url)) {result.cancel(); return true;}
+                EditText entry=new EditText(PcPreviewActivity.this);
+                entry.setSingleLine(true);
+                entry.setText(defaultValue==null?"":defaultValue);
+                int space=(int)(16*getResources().getDisplayMetrics().density);
+                entry.setPadding(space,space,space,space);
+                new AlertDialog.Builder(PcPreviewActivity.this)
+                    .setTitle("输入内容")
+                    .setMessage(message)
+                    .setView(entry)
+                    .setNegativeButton("取消",(dialog,which)->result.cancel())
+                    .setPositiveButton("确定",(dialog,which)->
+                        result.confirm(entry.getText().toString()))
+                    .setOnCancelListener(dialog->result.cancel())
+                    .show();
+                return true;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest req) {
                 return !req.getUrl().toString().startsWith(BASE);
