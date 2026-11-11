@@ -70,6 +70,7 @@ final class PcNativeFileApi {
             case "move": return transfer(paths(args),required(args,"target"),true);
             case "rename": return rename(required(args,"path"),required(args,"name"));
             case "mkdir": return mkdir(required(args,"path"),required(args,"name"));
+            case "newFile": return newFile(required(args,"path"),required(args,"name"));
             case "recycle": return recycle(paths(args));
             case "extract": return extract(context,required(args,"path"),required(args,"target"));
             case "zip": return zip(paths(args),required(args,"target"));
@@ -370,6 +371,15 @@ final class PcNativeFileApi {
         if(!parent.isDirectory())throw new IOException("文件夹不存在");
         File target=inside(new File(parent,cleanName(name)).getPath());
         if(target.exists()||!target.mkdir())throw new IOException("创建失败或名称已存在");
+        return new JSONObject().put("path",target.getAbsolutePath());
+    }
+
+    private static JSONObject newFile(String dir, String name)throws Exception {
+        File parent=inside(dir);
+        if(!parent.isDirectory())throw new IOException("文件夹不存在或没有权限");
+        File target=inside(new File(parent,cleanName(name)).getPath());
+        if(target.exists()||!target.createNewFile())
+            throw new IOException("文件名已存在或无法创建文件");
         return new JSONObject().put("path",target.getAbsolutePath());
     }
 
