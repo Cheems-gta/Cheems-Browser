@@ -1,7 +1,7 @@
-name: CFM Android V0.4 - Build APK
+name: CFM Android V0.5 - Build APK
 on:
   push:
-    branches: [cfm-android-v0.4]
+    branches: [cfm-android-v0.5]
     paths:
       - "Cheems-File-Manager-Android/**"
       - ".github/workflows/cfm-android-build.yml"
@@ -36,7 +36,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFM-Android-V0.4-debug-apk
+          name: CheemsFM-Android-V0.5-debug-apk
           path: Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
