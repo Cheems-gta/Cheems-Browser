@@ -681,7 +681,7 @@ function contextMenu(x,y,item) {
 
 function wire() {
   const touchActions = $("#mobile-file-actions");
-  if (touchActions) touchActions.addEventListener("click",mobileActionsForSelection);
+  if (touchActions) touchActions.addEventListener("click",e => {e.stopPropagation();mobileActionsForSelection();});
   $("#refresh").addEventListener("click",refreshBoth);
   const terminalButton=$("#terminal-button");
   if(terminalButton)terminalButton.addEventListener("click",()=>openTerminal(activePane().path));
