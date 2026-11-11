@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.7 触屏测试</small></span></div>
+      <div class="brand"><span class="brand-mark">CFM</span><span class="brand-text">Cheems File Manager <small>PC · V0.8 触屏测试</small></span></div>
       <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
     </header>
 
@@ -33,6 +33,7 @@
       <button id="send-trash" class="danger" title="把选中的项目移入 CFM 本地回收站">♲ 移入回收站</button>
       <button id="delete" title="打开 CFM 本地回收站，无需选择文件">▣ 打开回收站</button>
       <button id="restore-trash" title="恢复回收站里选中的文件（需要先打开回收站）">⟲ 恢复</button>
+      <button id="permanent-trash" class="danger hidden" title="仅在 CFM 回收站中可用：永久删除选中项，删除后无法恢复">🗑 永久删除</button>
       <button id="share" title="通过系统支持的应用分享所选文件">↗ 分享</button>
       <button id="mobile-file-actions" title="先点选文件，再打开完整文件右键菜单；长按文件也可以">⋮ 文件操作</button>
       <span class="divider"></span>
@@ -68,7 +69,7 @@
     </main>
     <footer class="status">
       <span id="status-text">准备就绪</span>
-      <span>双击打开 · 长按文件=右键 · 单击选中后点 ⋮ 文件操作</span>
+      <span>双栏默认对齐 · 长按回收站项目可恢复/永久删除</span>
     </footer>
   </div>
 
