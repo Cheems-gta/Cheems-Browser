@@ -1,7 +1,7 @@
-name: CFM Android V0.8 - QA + APK
+name: CFM Android V0.9 - Custom icon + QA + APK
 on:
   push:
-    branches: [cfm-pc-android-preview-v0.8]
+    branches: [cfm-pc-android-preview-v0.9]
     paths:
       - "Cheems-File-Manager-Android/**"
       - "CFM-QA/**"
@@ -48,6 +48,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Check bundled Cheems launcher artwork
+        run: |
+          file Cheems-File-Manager-Android/app/src/main/res/mipmap-nodpi/ic_launcher.webp
+          test -s Cheems-File-Manager-Android/app/src/main/res/mipmap-nodpi/ic_launcher.webp
       - name: Assemble APK after UI tests
         run: gradle -p Cheems-File-Manager-Android :app:assembleDebug --stacktrace
       - name: Compile Android instrumented tests
@@ -55,7 +59,7 @@ jobs:
       - name: Upload verified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFM-PC-UI-Android-Preview-V0.8-QA-APK
+          name: CheemsFM-PC-UI-Android-Preview-V0.9-Icon-APK
           path: Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
