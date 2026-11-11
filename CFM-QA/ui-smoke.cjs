@@ -90,6 +90,15 @@ async function waitFor(condition,limit=1700){
   await new Promise(resolve=>setTimeout(resolve,12));
  }
 }
+async function setPath(pane,path){
+  const input=w.document.querySelector("#path"+pane);
+  input.value=path;
+  input.dispatchEvent(new w.KeyboardEvent("keydown",{
+    key:"Enter",bubbles:true,cancelable:true
+  }));
+  await waitFor(()=>w.document.querySelector("#path"+pane).value===path);
+  await new Promise(resolve=>setTimeout(resolve,25));
+}
 async function test(label,fn){
  try{await fn();passed++;console.log("PASS | "+label);}
  catch(error){failed++;console.error("FAIL | "+label+" | "+error.message);}
@@ -109,7 +118,7 @@ async function test(label,fn){
     assert.equal(w.document.querySelector("#path0").value,home);
   });
   await test("forward / back history works",async()=>{
-    await w.navigate(0,downloads);
+    await setPath(0,downloads);
     await w.CFMNav.back();
     assert.equal(w.document.querySelector("#path0").value,home);
     await w.CFMNav.forward();
@@ -135,7 +144,7 @@ async function test(label,fn){
     assert.equal(requests.filter(x=>x.action==="recycle").length,before);
   });
   await test("Send To Trash only acts on selected files",async()=>{
-    if(mode==="android")await w.navigate(0,downloads);
+    if(mode==="android")await setPath(0,downloads);
     const row=w.document.querySelector("#entries0 .entry[data-path]");
     assert.ok(row);
     row.click();
@@ -161,6 +170,7 @@ async function test(label,fn){
     assert.match(menu.textContent,/新建空文件/);
     [...menu.querySelectorAll("button")].find(e=>e.textContent.includes("空文件")).click();
     await waitFor(()=>requests.some(x=>x.action==="newFile"));
+    await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
   });
   await test("HTML and archive buttons exist",async()=>{
     assert.ok(w.document.querySelector("#html-button"));
@@ -177,6 +187,7 @@ async function test(label,fn){
       assert.ok(w.document.getElementById(id),"Missing PC nav "+id);
   });
  }finally{
+  await new Promise(resolve=>setTimeout(resolve,90));
   dom.window.close();
  }
  console.log("RESULT | MODE="+mode+"; PASS="+passed+"; FAIL="+failed);
