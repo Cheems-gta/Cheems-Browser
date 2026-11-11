@@ -123,6 +123,50 @@ public final class PcNativeQaTest {
             assertTrue(note.exists());
             assertEquals(expected,new String(Files.readAllBytes(note.toPath()),StandardCharsets.UTF_8));
 
+            // Permanent deletion is available ONLY after a file has entered CFM trash.
+            File permanentSource=new File(left,
+                "qa_permanent_"+UUID.randomUUID().toString().replace("-","")+".txt");
+            assertTrue(permanentSource.createNewFile());
+            Files.write(permanentSource.toPath(),"Test delete".getBytes(StandardCharsets.UTF_8));
+            run(context,"recycle",arg("paths",single(permanentSource)));
+            File permanentTarget=new File(trash,permanentSource.getName());
+            assertTrue(permanentTarget.isFile());
+            run(context,"permanentDelete",arg("paths",single(permanentTarget)));
+            assertFalse("Trash entry must be deleted",permanentTarget.exists());
+            assertFalse("Original file must remain absent",permanentSource.exists());
+
+            // Ensure the new permanent-delete endpoint cannot touch ordinary files.
+            boolean deniedOutsideTrash=false;
+            try {
+                run(context,"permanentDelete",arg("paths",single(note)));
+            } catch(Exception expectedDenied) {
+                deniedOutsideTrash=true;
+            }
+            assertTrue("Must reject deleting files outside CFM trash",deniedOutsideTrash);
+            assertTrue("Outside file must remain safe",note.exists());
+
+            // A folder inside trash is deleted recursively without touching other files.
+            File trashSource=new File(left,"qa_trash_directory_"+UUID.randomUUID()
+                .toString().replace("-",""));
+            File nested=new File(trashSource,"inside");
+            assertTrue(nested.mkdirs());
+            assertTrue(new File(nested,"test.txt").createNewFile());
+            run(context,"recycle",arg("paths",single(trashSource)));
+            File trashedFolder=new File(trash,trashSource.getName());
+            assertTrue(new File(trashedFolder,"inside/test.txt").exists());
+            run(context,"permanentDelete",arg("paths",single(trashedFolder)));
+            assertFalse("Recursive trash removal must remove directory",trashedFolder.exists());
+
+            // The trash metadata itself cannot be erased via this action.
+            boolean deniedIndex=false;
+            try {
+                run(context,"permanentDelete",arg("paths",single(
+                    new File(trash,".cfm_index.json"))));
+            } catch(Exception expectedDenied) {
+                deniedIndex=true;
+            }
+            assertTrue("Permanent delete must protect its own metadata",deniedIndex);
+
             boolean illegalNameRejected=false;
             try {run(context,"mkdir",new JSONObject()
                 .put("path",left.getPath()).put("name","../wrong")); }
