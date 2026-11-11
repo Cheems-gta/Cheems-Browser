@@ -92,3 +92,12 @@ button.danger:hover{color:#ffc7c7;background:#4a2d35}
 .search-result small{color:var(--muted)}
 .toast{position:fixed;bottom:45px;left:50%;transform:translateX(-50%);background:#363e4b;color:white;border:1px solid #52779a;z-index:100;border-radius:5px;padding:11px 18px;max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 6px 26px #0007}
 @media(max-width:900px){.column-head,.entry{grid-template-columns:minmax(100px,1fr) 78px}.column-head span:nth-child(2),.entry .meta.modified{display:none}.brand-text small{display:none}}
+
+
+/* V0.3 terminal: original dark desktop styling, no glass effects. */
+.terminal-dialog{width:min(930px,92vw);height:min(600px,82vh)}
+.terminal-controls{display:flex;align-items:center;gap:10px;padding:8px 14px;font-size:11px;color:var(--muted);background:#29292d;border-bottom:1px solid var(--line)}
+#terminal-output{flex:1;min-height:0;margin:0;background:#111315;color:#c9e3d0;padding:13px 16px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 Consolas,"Cascadia Mono","Microsoft YaHei UI",monospace}
+.terminal-entry{flex:none;display:flex;gap:9px;align-items:center;padding:9px 12px;background:#222225}
+.terminal-entry label{color:#a8d5bd;font-size:17px}
+#terminal-input{flex:1;min-width:0;border:1px solid #4b4c50;background:#151517;color:#e7e7e8;padding:8px 10px;border-radius:4px;font:12px Consolas,"Microsoft YaHei UI",monospace}
