@@ -106,3 +106,9 @@ button.danger:hover{color:#ffc7c7;background:#4a2d35}
 .entry{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #mobile-file-actions{color:#dbeaf6;border:1px solid #5e82a2;background:#2b3a48;font-weight:600}
 #mobile-file-actions:hover,#mobile-file-actions:active{background:#3b5369}
+
+/* V0.5: search form is a native HTML dialog, not Android WebView's JS prompt. */
+.search-input-row{display:flex;flex:none;align-items:center;gap:9px;padding:12px 16px;background:#2c2c2f;border-bottom:1px solid var(--line)}
+#search-query{min-width:0;flex:1;background:#171719;border:1px solid #55565a;border-radius:5px;color:var(--text);padding:10px 12px;font-size:14px}
+#search-submit{background:#285d8b;border:1px solid #3679ad;padding:10px 22px;font-weight:600}
+#search-submit:disabled{opacity:.6;cursor:wait}
