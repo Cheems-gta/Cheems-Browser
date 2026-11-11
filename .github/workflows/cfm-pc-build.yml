@@ -1,0 +1,32 @@
+name: CFM PC V0.1 - Build Windows EXE
+on:
+  push:
+    branches: [cfm-pc-web-v0.1]
+    paths:
+      - "Cheems-File-Manager-PC/**"
+      - ".github/workflows/cfm-pc-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish standalone Windows x64 EXE
+        shell: pwsh
+        run: dotnet publish ./Cheems-File-Manager-PC/CheemsFileManagerPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ./cfm-pc-output
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: CheemsFileManager-PC-V0.1-win-x64
+          path: ./cfm-pc-output/**
+          if-no-files-found: error
+          retention-days: 30
