@@ -16,5 +16,6 @@
     <EmbeddedResource Include="ui\index.html" LogicalName="CFM.UI.index.html"/>
     <EmbeddedResource Include="ui\style.css" LogicalName="CFM.UI.style.css"/>
     <EmbeddedResource Include="ui\app.js" LogicalName="CFM.UI.app.js"/>
+    <EmbeddedResource Include="branding\cfm_icon.webp" LogicalName="CFM.UI.icon.webp"/>
   </ItemGroup>
 </Project>
