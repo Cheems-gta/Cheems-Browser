@@ -10,8 +10,8 @@ android {
         minSdk 30
         targetSdk 35
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        versionCode 9
-        versionName '0.9.0-PC-Preview'
+        versionCode 10
+        versionName '1.0.0-PC-Preview'
     }
     buildFeatures {
         aidl true
