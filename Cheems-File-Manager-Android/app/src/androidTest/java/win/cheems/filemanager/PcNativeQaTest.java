@@ -80,7 +80,7 @@ public final class PcNativeQaTest {
             run(context,"copy",new JSONObject().put("paths",single(note))
                 .put("target",right.getPath()));
             File copied=new File(right,note.getName());
-            assertEquals(expected,Files.readString(copied.toPath()));
+            assertEquals(expected,new String(Files.readAllBytes(copied.toPath()),StandardCharsets.UTF_8));
             run(context,"copy",new JSONObject().put("paths",single(note))
                 .put("target",right.getPath()));
             assertTrue(new File(right,"qa_note (2).txt").exists());
@@ -103,8 +103,8 @@ public final class PcNativeQaTest {
             assertTrue(archive.exists());
             JSONObject out=run(context,"extract",new JSONObject()
                 .put("path",archive.getPath()).put("target",right.getPath()));
-            assertEquals(expected,Files.readString(
-                new File(out.getString("folder"),"qa_note.txt").toPath()));
+            assertEquals(expected,new String(Files.readAllBytes(
+                new File(out.getString("folder"),"qa_note.txt").toPath()),StandardCharsets.UTF_8));
 
             Intent share=PcNativeFileApi.shareIntent(context,
                 new JSONObject().put("paths",single(note)));
@@ -121,7 +121,7 @@ public final class PcNativeQaTest {
             assertTrue(inTrash.exists());
             run(context,"restore",arg("paths",single(inTrash)));
             assertTrue(note.exists());
-            assertEquals(expected,Files.readString(note.toPath()));
+            assertEquals(expected,new String(Files.readAllBytes(note.toPath()),StandardCharsets.UTF_8));
 
             boolean illegalNameRejected=false;
             try {run(context,"mkdir",new JSONObject()
