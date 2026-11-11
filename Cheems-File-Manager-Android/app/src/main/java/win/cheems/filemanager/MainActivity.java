@@ -1,6 +1,11 @@
 package win.cheems.filemanager;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.os.IBinder;
+import rikka.shizuku.Shizuku;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.Configuration;
@@ -67,6 +72,34 @@ public final class MainActivity extends Activity {
     private LinearLayout host, fileArea, notice;
     private TextView pathView, counts;
     private boolean hadAccess = false;
+    private volatile IProtectedDir privileged = null;
+    private boolean shizukuBinding = false;
+    private final Shizuku.OnBinderReceivedListener shizukuReceived = () -> {
+        if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) bindShizuku();
+    };
+    private final Shizuku.OnBinderDeadListener shizukuDied = () -> {
+        privileged = null;
+        shizukuBinding = false;
+        if (canAccess()) refreshBoth();
+    };
+    private final Shizuku.OnRequestPermissionResultListener shizukuPermission = (code,result) -> {
+        if (code != 2005) return;
+        if (result == PackageManager.PERMISSION_GRANTED) bindShizuku();
+        else say("未授权 Shizuku，普通文件管理不受影响");
+    };
+    private final ServiceConnection shizukuConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+            privileged = IProtectedDir.Stub.asInterface(binder);
+            shizukuBinding = false;
+            say("Shizuku 只读浏览服务已连接");
+            refreshBoth();
+        }
+        @Override public void onServiceDisconnected(ComponentName name) {
+            privileged = null;
+            shizukuBinding = false;
+            refreshBoth();
+        }
+    };
 
     private static final class Pane {
         final String title, pref;
@@ -89,6 +122,9 @@ public final class MainActivity extends Activity {
         right.openFolders.add(right.folder);
         createUi();
         renderPermissionState();
+        Shizuku.addBinderReceivedListenerSticky(shizukuReceived);
+        Shizuku.addBinderDeadListener(shizukuDied);
+        Shizuku.addRequestPermissionResultListener(shizukuPermission);
     }
 
     @Override protected void onResume() {
@@ -98,6 +134,9 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         io.shutdown();
+        Shizuku.removeBinderReceivedListener(shizukuReceived);
+        Shizuku.removeBinderDeadListener(shizukuDied);
+        Shizuku.removeRequestPermissionResultListener(shizukuPermission);
         super.onDestroy();
     }
 
@@ -685,9 +724,102 @@ public final class MainActivity extends Activity {
         }catch(Exception e){fail(e);}
     }
 
+    private static boolean isPrivilegedPath(File folder) {
+        if (folder == null) return false;
+        String p = folder.getAbsolutePath();
+        return p.equals("/storage/emulated/0/Android/data") ||
+               p.startsWith("/storage/emulated/0/Android/data/") ||
+               p.equals("/storage/emulated/0/Android/obb") ||
+               p.startsWith("/storage/emulated/0/Android/obb/");
+    }
+
+    private void bindShizuku() {
+        if (shizukuBinding || privileged != null || !Shizuku.pingBinder()) return;
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return;
+        try {
+            Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
+                new ComponentName(getPackageName(), ProtectedDirService.class.getName()))
+                .daemon(false).processNameSuffix("cfm_readonly").version(5);
+            shizukuBinding = true;
+            Shizuku.bindUserService(args, shizukuConnection);
+        } catch (Exception ex) {
+            shizukuBinding = false;
+            say("Shizuku 连接失败：" + ex.getMessage());
+        }
+    }
+
+    private void connectShizuku() {
+        try {
+            if (!Shizuku.pingBinder()) {
+                new AlertDialog.Builder(this).setTitle("Shizuku 尚未启动")
+                    .setMessage("请先在已安装的 Shizuku 应用中启动服务，再返回这里连接。"
+                        + "不同 Android 版本和厂商的权限能力不完全相同。")
+                    .setPositiveButton("知道了", null).show();
+            } else if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                bindShizuku();
+                say("已获授权，正在连接 Shizuku 浏览服务");
+            } else if (Shizuku.shouldShowRequestPermissionRationale()) {
+                say("此前拒绝了授权，请在 Shizuku 中检查权限设置");
+            } else {
+                Shizuku.requestPermission(2005);
+            }
+        } catch (Exception ex) { fail(ex); }
+    }
+
+    private void shizukuDialog() {
+        String status = privileged != null ? "已连接（只读）" :
+            Shizuku.pingBinder() ? "Shizuku 运行中，未连接" : "Shizuku 未启动";
+        new AlertDialog.Builder(this).setTitle("Shizuku · "+status)
+            .setMessage("CFM V0.5 在用户明确授权后，可尝试浏览 Android/data 和 Android/obb。"
+                +"此模式不开放删除或写入，是否可读取仍取决于系统及 Shizuku 运行身份。"
+                +"\n\n普通目录继续使用 Android 系统“所有文件访问”权限。")
+            .setNegativeButton("关闭",null)
+            .setPositiveButton("连接 / 授权", (d,w)->connectShizuku()).show();
+    }
+
+    private void refreshPrivileged(Pane pane, File folder) {
+        rowInfo(pane, privileged == null ? "需要连接 Shizuku 才能尝试浏览" : "正在使用 Shizuku 读取……");
+        IProtectedDir service = privileged;
+        if (service == null) return;
+        io.execute(() -> {
+            try {
+                String[] entries = service.list(folder.getAbsolutePath());
+                runOnUiThread(() -> {
+                    if (!pane.folder.equals(folder)) return;
+                    pane.rows.removeAllViews();
+                    addParentRow(pane);
+                    if (entries.length == 0) rowInfo(pane, "目录为空");
+                    for (String entry : entries) {
+                        String[] fields = entry.split("\t",3);
+                        if (fields.length != 3) continue;
+                        long modified = 0;
+                        try { modified = Long.parseLong(fields[1]); } catch (Exception ignored) {}
+                        addFileRow(pane,new File(folder,fields[2]),fields[0].equals("D"),modified);
+                    }
+                    selectPane(pane);
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> {
+                    if (!pane.folder.equals(folder)) return;
+                    pane.rows.removeAllViews();
+                    addParentRow(pane);
+                    rowInfo(pane, "Shizuku 无法读取：" + ex.getMessage());
+                });
+            }
+        });
+    }
+
+    private void privilegedItemMenu(Pane pane,File file,boolean folder) {
+        new AlertDialog.Builder(this).setTitle(file.getName())
+            .setMessage("Shizuku 浏览模式为只读，暂不允许修改或删除 Android 受保护目录内的文件。")
+            .setNegativeButton("关闭",null)
+            .setPositiveButton(folder ? "进入文件夹" : "知道了",
+                (d,w)-> { if(folder) navigate(pane,file); }).show();
+    }
+
     private void moreMenu() {
         final String[] items = {"搜索文件", "新建文件夹", "返回上一级", "刷新",
-            "授权设置与说明", "支持的解压格式"};
+            "授权设置与说明", "支持的解压格式", "Shizuku 连接"};
         new AlertDialog.Builder(this).setTitle("CFM v0.3").setItems(items, (d, which) -> {
             switch (which) {
                 case 0: searchDialog(); break;
@@ -696,6 +828,7 @@ public final class MainActivity extends Activity {
                 case 3: refreshBoth(); break;
                 case 4: permissionInfo(); break;
                 case 5: archiveInfo(); break;
+                case 6: shizukuDialog(); break;
                 default: break;
             }
         }).show();
