@@ -1,0 +1,421 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using Microsoft.VisualBasic.FileIO;
+using SharpCompress.Archives;
+
+namespace CheemsFileManagerPC;
+
+public static class FileOperations
+{
+    private const long MaxReadBytes = 2L * 1024 * 1024;
+    private const long MaxExtractFileBytes = 512L * 1024 * 1024;
+    private const long MaxExtractTotalBytes = 2L * 1024 * 1024 * 1024;
+    private const int MaxExtractFiles = 4000;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
+    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".html", ".htm", ".css", ".js", ".ts", ".json",
+        ".xml", ".yaml", ".yml", ".ini", ".cfg", ".log", ".csv", ".py",
+        ".cs", ".java", ".cpp", ".c", ".h", ".hpp", ".svg", ".bat", ".ps1"
+    };
+
+    public static object Execute(string action, JsonElement args) => action switch
+    {
+        "init" => InitialState(),
+        "list" => ListDir(S(args, "path")),
+        "search" => Search(S(args, "path"), S(args, "query")),
+        "read" => ReadText(S(args, "path")),
+        "save" => SaveText(S(args, "path"), S(args, "text"), B(args, "bom")),
+        "copy" => Transfer(Paths(args), S(args, "target"), false),
+        "move" => Transfer(Paths(args), S(args, "target"), true),
+        "rename" => Rename(S(args, "path"), S(args, "name")),
+        "mkdir" => NewFolder(S(args, "path"), S(args, "name")),
+        "recycle" => Recycle(Paths(args)),
+        "extract" => Extract(S(args, "path"), S(args, "target")),
+        "zip" => MakeZip(Paths(args), S(args, "target")),
+        _ => throw new ArgumentException("不支持的操作：" + action)
+    };
+
+    private static string S(JsonElement obj, string key)
+    {
+        if (obj.ValueKind != JsonValueKind.Object ||
+            !obj.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.String)
+            throw new ArgumentException("缺少参数：" + key);
+        return v.GetString() ?? "";
+    }
+
+    private static bool B(JsonElement obj, string key) =>
+        obj.ValueKind == JsonValueKind.Object &&
+        obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
+
+    private static string[] Paths(JsonElement obj)
+    {
+        if (obj.ValueKind != JsonValueKind.Object ||
+            !obj.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Array)
+            throw new ArgumentException("没有选择文件");
+        string[] result = paths.EnumerateArray().Select(v => v.GetString() ?? "")
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Select(Path.GetFullPath).ToArray();
+        if (result.Length == 0 || result.Length > 200)
+            throw new IOException("请选择 1～200 个文件或文件夹");
+        return result;
+    }
+
+    private static object InitialState()
+    {
+        string user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        string downloads = Path.Combine(user, "Downloads");
+        if (!Directory.Exists(downloads)) downloads = user;
+        return new
+        {
+            home = user,
+            desktop,
+            documents,
+            downloads,
+            drives = DriveInfo.GetDrives().Where(d => d.IsReady)
+                .Select(d => new { path = d.Name, label = d.Name.TrimEnd('\\') })
+                .ToArray()
+        };
+    }
+
+    private static object ListDir(string input)
+    {
+        string full = Path.GetFullPath(input);
+        if (!Directory.Exists(full)) throw new DirectoryNotFoundException("目录不存在：" + full);
+        var items = new List<object>();
+        var listing = Directory.EnumerateFileSystemEntries(full).Take(2001).ToArray();
+        foreach (string path in listing.Take(2000))
+        {
+            try
+            {
+                var attributes = File.GetAttributes(path);
+                bool folder = attributes.HasFlag(FileAttributes.Directory);
+                var info = folder ? (FileSystemInfo)new DirectoryInfo(path) : new FileInfo(path);
+                items.Add(new
+                {
+                    name = info.Name,
+                    path = info.FullName,
+                    isDir = folder,
+                    isLink = attributes.HasFlag(FileAttributes.ReparsePoint),
+                    size = folder ? 0L : ((FileInfo)info).Length,
+                    modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+                });
+            }
+            catch (UnauthorizedAccessException) { /* individual entry is inaccessible */ }
+            catch (IOException) { /* item was renamed while listing */ }
+        }
+        return new
+        {
+            path = full,
+            parent = Directory.GetParent(full)?.FullName,
+            items = items.OrderBy(v => ((dynamic)v).isDir ? 0 : 1)
+                .ThenBy(v => ((dynamic)v).name, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            truncated = listing.Length > 2000
+        };
+    }
+
+    private static object Search(string directory, string query)
+    {
+        if (query.Trim().Length < 2) throw new IOException("搜索词至少需要两个字符");
+        string baseDir = Path.GetFullPath(directory);
+        if (!Directory.Exists(baseDir)) throw new DirectoryNotFoundException(baseDir);
+        string term = query.Trim();
+        var found = new List<object>();
+        var stack = new Stack<(string Path, int Level)>();
+        stack.Push((baseDir, 0));
+        int scanned = 0;
+        while (stack.Count > 0 && scanned < 50000 && found.Count < 180)
+        {
+            var current = stack.Pop();
+            if (current.Level > 20) continue;
+            try
+            {
+                foreach (string item in Directory.EnumerateFileSystemEntries(current.Path))
+                {
+                    if (++scanned > 50000 || found.Count >= 180) break;
+                    var attrib = File.GetAttributes(item);
+                    bool folder = attrib.HasFlag(FileAttributes.Directory);
+                    if (Path.GetFileName(item).Contains(term, StringComparison.OrdinalIgnoreCase))
+                        found.Add(new { name = Path.GetFileName(item), path = item, isDir = folder });
+                    if (folder && !attrib.HasFlag(FileAttributes.ReparsePoint))
+                        stack.Push((item, current.Level + 1));
+                }
+            }
+            catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
+        }
+        return new { results = found.ToArray(), scanned, truncated = scanned >= 50000 || found.Count >= 180 };
+    }
+
+    private static void EnsureText(string path)
+    {
+        if (!TextExtensions.Contains(Path.GetExtension(path)))
+            throw new IOException("本版只编辑常见的纯文本/代码格式，无法直接打开二进制文件");
+        if (!File.Exists(path)) throw new FileNotFoundException("文件不存在", path);
+    }
+
+    private static object ReadText(string input)
+    {
+        string path = Path.GetFullPath(input);
+        EnsureText(path);
+        if (new FileInfo(path).Length > MaxReadBytes)
+            throw new IOException("文本编辑器最多打开 2MB 文件");
+        byte[] bytes = File.ReadAllBytes(path);
+        bool bom = bytes.Length >= 3 &&
+            bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        try
+        {
+            string text = StrictUtf8.GetString(bytes.AsSpan(bom ? 3 : 0));
+            return new { path, name = Path.GetFileName(path), text, bom,
+                html = Path.GetExtension(path).Equals(".html", StringComparison.OrdinalIgnoreCase) ||
+                       Path.GetExtension(path).Equals(".htm", StringComparison.OrdinalIgnoreCase) };
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new IOException("当前文件不是有效 UTF-8 文本。为避免乱码或损坏，请换用支持原始编码的编辑器");
+        }
+    }
+
+    private static object SaveText(string input, string text, bool bom)
+    {
+        string path = Path.GetFullPath(input);
+        EnsureText(path);
+        if (StrictUtf8.GetByteCount(text) > MaxReadBytes)
+            throw new IOException("保存内容超过 2MB 限制");
+        byte[] content = (bom ? new UTF8Encoding(true) : new UTF8Encoding(false)).GetPreamble()
+            .Concat(StrictUtf8.GetBytes(text)).ToArray();
+        // Keep a single neighboring backup before replacing an existing file.
+        File.Copy(path, path + ".cfm.bak", true);
+        File.WriteAllBytes(path, content);
+        return new { path, backup = path + ".cfm.bak" };
+    }
+
+    private static string ValidName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value is "." or ".." ||
+            value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            value.EndsWith(' ') || value.EndsWith('.'))
+            throw new IOException("请输入不包含路径字符的合法文件名");
+        return value;
+    }
+
+    private static object NewFolder(string parent, string name)
+    {
+        string dir = Path.GetFullPath(parent);
+        if (!Directory.Exists(dir)) throw new DirectoryNotFoundException(dir);
+        string target = Path.Combine(dir, ValidName(name));
+        if (PathExists(target)) throw new IOException("名称已被占用：" + name);
+        Directory.CreateDirectory(target);
+        return new { path = target };
+    }
+
+    private static object Rename(string input, string name)
+    {
+        string source = Path.GetFullPath(input);
+        string parent = Path.GetDirectoryName(source) ?? throw new IOException("不可重命名根目录");
+        if (Path.GetPathRoot(source)?.TrimEnd('\\') == source.TrimEnd('\\'))
+            throw new IOException("不允许重命名磁盘根目录");
+        string target = Path.Combine(parent, ValidName(name));
+        if (PathExists(target)) throw new IOException("目标名称已存在");
+        if (Directory.Exists(source)) Directory.Move(source, target);
+        else if (File.Exists(source)) File.Move(source, target);
+        else throw new FileNotFoundException("找不到原文件");
+        return new { path = target };
+    }
+
+    private static bool PathExists(string path) => File.Exists(path) || Directory.Exists(path);
+
+    private static string Unique(string parent, string name, bool folder = false)
+    {
+        string candidate = Path.Combine(parent, name);
+        if (!PathExists(candidate)) return candidate;
+        string stem = folder ? name : Path.GetFileNameWithoutExtension(name);
+        string ext = folder ? "" : Path.GetExtension(name);
+        for (int i = 2; i < 10000; i++)
+        {
+            candidate = Path.Combine(parent, $"{stem} ({i}){ext}");
+            if (!PathExists(candidate)) return candidate;
+        }
+        throw new IOException("无法生成唯一目标文件名");
+    }
+
+    private static bool ChildOf(string maybeChild, string parent)
+    {
+        string p = Path.GetFullPath(parent).TrimEnd('\\', '/') +
+                   Path.DirectorySeparatorChar;
+        string c = Path.GetFullPath(maybeChild).TrimEnd('\\', '/') +
+                   Path.DirectorySeparatorChar;
+        return c.StartsWith(p, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static object Transfer(string[] sources, string targetInput, bool move)
+    {
+        string targetDir = Path.GetFullPath(targetInput);
+        if (!Directory.Exists(targetDir)) throw new DirectoryNotFoundException(targetDir);
+        int finished = 0;
+        foreach (string source in sources)
+        {
+            bool isDir = Directory.Exists(source);
+            if (!isDir && !File.Exists(source)) throw new FileNotFoundException(source);
+            string root = Path.GetPathRoot(source) ?? source;
+            if (source.TrimEnd('\\') == root.TrimEnd('\\'))
+                throw new IOException("不允许复制或移动磁盘根目录");
+            if (isDir && ChildOf(targetDir, source))
+                throw new IOException("不能将文件夹放进自身或子目录：" + source);
+            if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("暂不支持复制符号链接、目录联接：" + source);
+
+            string dest = Unique(targetDir, Path.GetFileName(source), isDir);
+            if (move)
+            {
+                if (isDir) Directory.Move(source, dest);
+                else File.Move(source, dest);
+            }
+            else if (isDir) CopyDirectory(source, dest, 0);
+            else File.Copy(source, dest);
+            finished++;
+        }
+        return new { count = finished, operation = move ? "移动" : "复制" };
+    }
+
+    private static void CopyDirectory(string from, string to, int depth)
+    {
+        if (depth > 50) throw new IOException("文件夹嵌套过深，已停止复制");
+        Directory.CreateDirectory(to);
+        foreach (var entry in Directory.EnumerateFileSystemEntries(from))
+        {
+            var attr = File.GetAttributes(entry);
+            if (attr.HasFlag(FileAttributes.ReparsePoint))
+                throw new IOException("文件夹包含符号链接/目录联接，为安全起见已停止");
+            string dest = Path.Combine(to, Path.GetFileName(entry));
+            if (attr.HasFlag(FileAttributes.Directory)) CopyDirectory(entry, dest, depth + 1);
+            else File.Copy(entry, dest);
+        }
+    }
+
+    private static object Recycle(string[] sources)
+    {
+        int done = 0;
+        foreach (string path in sources)
+        {
+            string root = Path.GetPathRoot(path) ?? path;
+            if (path.TrimEnd('\\') == root.TrimEnd('\\'))
+                throw new IOException("不能删除磁盘根目录");
+            if (Directory.Exists(path))
+                FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs,
+                    RecycleOption.SendToRecycleBin);
+            else if (File.Exists(path))
+                FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs,
+                    RecycleOption.SendToRecycleBin);
+            else throw new FileNotFoundException("找不到：" + path);
+            done++;
+        }
+        return new { count = done };
+    }
+
+    private static object Extract(string sourceInput, string destInput)
+    {
+        string source = Path.GetFullPath(sourceInput);
+        string dest = Path.GetFullPath(destInput);
+        if (!File.Exists(source) || !Directory.Exists(dest))
+            throw new IOException("压缩包或目标目录不存在");
+        string name = Path.GetFileNameWithoutExtension(source);
+        if (name.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
+            name = name[..^4];
+        string folder = Unique(dest, name + "_解压", true);
+        Directory.CreateDirectory(folder);
+        int count = 0;
+        long total = 0;
+        try
+        {
+            using var archive = ArchiveFactory.Open(source);
+            foreach (var entry in archive.Entries)
+            {
+                if (++count > MaxExtractFiles) throw new IOException("压缩包项目超过 4000 个，已中止");
+                string key = entry.Key?.Replace('\\', '/') ?? "";
+                if (key.Length == 0) continue;
+                if (key.StartsWith('/') || key.Contains('\0') ||
+                    (key.Length >= 2 && char.IsLetter(key[0]) && key[1] == ':'))
+                    throw new IOException("压缩包包含异常文件路径");
+                string output = Path.GetFullPath(Path.Combine(folder,
+                    key.Replace('/', Path.DirectorySeparatorChar)));
+                if (!ChildOf(output, folder))
+                    throw new IOException("已拦截试图解压到目标文件夹以外的路径");
+
+                if (entry.IsDirectory)
+                {
+                    Directory.CreateDirectory(output);
+                    continue;
+                }
+                if (entry.Size > MaxExtractFileBytes)
+                    throw new IOException("压缩包内单个文件超过 512MB 初版安全限制");
+                Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+                if (File.Exists(output)) throw new IOException("压缩包中存在重复路径：" + key);
+                long current = 0;
+                using var input = entry.OpenEntryStream();
+                using var result = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    current += read;
+                    total += read;
+                    if (current > MaxExtractFileBytes || total > MaxExtractTotalBytes)
+                        throw new IOException("解压超过安全限制（单文件512MB/总计2GB）");
+                    result.Write(buffer, 0, read);
+                }
+            }
+        }
+        catch
+        {
+            // Incomplete extracted folder is retained to avoid accidental data loss.
+            throw;
+        }
+        return new { folder, files = count };
+    }
+
+    private static object MakeZip(string[] sources, string destInput)
+    {
+        string destDir = Path.GetFullPath(destInput);
+        if (!Directory.Exists(destDir)) throw new DirectoryNotFoundException(destDir);
+        string zip = Unique(destDir, "CFM-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip");
+        using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
+        foreach (var source in sources)
+        {
+            string name = Path.GetFileName(source.TrimEnd('\\', '/'));
+            if (Directory.Exists(source))
+            {
+                if (ChildOf(zip, source)) throw new IOException("不能把 ZIP 创建在要压缩的文件夹内部");
+                AddFolder(archive, source, name, 0);
+            }
+            else if (File.Exists(source)) archive.CreateEntryFromFile(source, name);
+            else throw new FileNotFoundException("不存在：" + source);
+        }
+        return new { path = zip };
+    }
+
+    private static void AddFolder(ZipArchive zip, string folder, string name, int depth)
+    {
+        if (depth > 40) throw new IOException("文件夹层级过深");
+        var entries = Directory.GetFileSystemEntries(folder);
+        if (entries.Length == 0) zip.CreateEntry(name.Replace('\\', '/') + "/");
+        foreach (string path in entries)
+        {
+            FileAttributes attrs = File.GetAttributes(path);
+            if (attrs.HasFlag(FileAttributes.ReparsePoint))
+                throw new IOException("压缩时不支持符号链接或目录联接");
+            string entry = (name + "/" + Path.GetFileName(path)).Replace('\\', '/');
+            if (attrs.HasFlag(FileAttributes.Directory)) AddFolder(zip, path, entry, depth + 1);
+            else zip.CreateEntryFromFile(path, entry);
+        }
+    }
+}
