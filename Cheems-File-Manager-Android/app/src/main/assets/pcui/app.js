@@ -402,6 +402,27 @@ async function rename() {
     await mutate("rename",{path:item.path,name},"已重命名");
   } catch(e){toast(e.message,true)}
 }
+// "Open trash" is navigation, not a delete command.
+async function openTrash() {
+  const result=await guarded(()=>call("openTrash",{}));
+  if(!result)return;
+  if(result.path) {
+    await guarded(()=>navigate(state.active,result.path));
+    toast(result.message||"已打开回收站");
+  } else toast(result.message||"已在系统中打开回收站");
+}
+async function restoreSelected() {
+  try {
+    const paths=selectedPaths();
+    if(!state.locations?.trash ||
+       !paths.every(p=>p.startsWith(state.locations.trash+"/"))) {
+      throw new Error("请先打开 CFM 回收站并选中要恢复的文件");
+    }
+    if(!confirm("恢复选中的 "+paths.length+" 项？\n将尽量恢复到原目录；同名不会覆盖。"))return;
+    const output=await mutate("restore",{paths},"已恢复回收站文件");
+    if(output?.message)toast(output.message);
+  }catch(error){toast(error.message,true);}
+}
 async function recycle() {
   try {
     const paths=selectedPaths();
@@ -761,6 +782,9 @@ function contextMenu(x,y,item) {
     actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
   }
   actions.push([isAndroidBuild()?"分享给微信 / QQ":"分享 / 定位文件",shareSelected]);
+  if(state.locations?.trash && item.path.startsWith(state.locations.trash+"/")) {
+    actions.push(["♻ 恢复到原目录",restoreSelected]);
+  }
   actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
   actions.push(["＋ 创建 HTML 文件",newHtml]);
   if(!isAndroidBuild()) {
@@ -832,7 +856,11 @@ function wire() {
   $("#move").addEventListener("click",()=>transfer(true));
   $("#new").addEventListener("click",makeFolder);
   $("#rename").addEventListener("click",rename);
-  $("#delete").addEventListener("click",recycle);
+  $("#delete").addEventListener("click",openTrash);
+  const sendToTrash=$("#send-trash");
+  if(sendToTrash) sendToTrash.addEventListener("click",recycle);
+  const restoreButton=$("#restore-trash");
+  if(restoreButton) restoreButton.addEventListener("click",restoreSelected);
   $("#edit").addEventListener("click",()=>{try{const item=oneItem();openItem(item)}catch(e){toast(e.message,true)}});
   $("#extract").addEventListener("click",()=>extract("other"));
   $("#zip").addEventListener("click",makeZip);
@@ -876,6 +904,11 @@ function wire() {
       return;
     }
     if(["INPUT","TEXTAREA"].includes(document.activeElement?.tagName))return;
+    if((e.altKey && e.key==="ArrowLeft")){e.preventDefault();historyStep(-1);return;}
+    if((e.altKey && e.key==="ArrowRight")){e.preventDefault();historyStep(1);return;}
+    if((e.altKey && e.key==="ArrowUp")){e.preventDefault();up();return;}
+    if((e.ctrlKey && e.key.toLowerCase()==="f")){e.preventDefault();search();return;}
+    if((e.ctrlKey && e.key.toLowerCase()==="l")){e.preventDefault();$("#path"+state.active).focus();$("#path"+state.active).select();return;}
     if(e.key==="F5"){e.preventDefault();refreshBoth();}
     if(e.key==="Backspace"){e.preventDefault();up();}
     if(e.key==="F2"){e.preventDefault();rename();}
