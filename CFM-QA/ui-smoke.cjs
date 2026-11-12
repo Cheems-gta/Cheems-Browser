@@ -200,6 +200,7 @@ async function test(label,fn){
     await waitFor(()=>requests.some(x=>x.action==="recycle" && x.args.paths.length===2));
     w.document.getElementById("multi-select").click();
     await setPath(1,downloads);
+    w.document.getElementById("pane0").click(); // Open trash in left pane for next test.
   });
   await test("Open Trash works without selecting a file",async()=>{
     const before=requests.filter(x=>x.action==="recycle").length;
@@ -215,7 +216,7 @@ async function test(label,fn){
     row.click();
     w.document.querySelector("#send-trash").click();
     await waitFor(()=>requests.some(x=>x.action==="recycle"));
-    const used=requests.find(x=>x.action==="recycle");
+    const used=requests.filter(x=>x.action==="recycle").at(-1);
     assert.equal(used.args.paths.length,1);
     assert.ok(used.args.paths[0].startsWith(downloads));
   });
