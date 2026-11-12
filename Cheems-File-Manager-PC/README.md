@@ -44,3 +44,19 @@ Source branch: `cfm-pc-web-v0.1` (independent from browser, Android CFM, and the
 - 图标按实际可视文件惰性加载，单批最多 12 条，并按路径、大小和修改时间缓存，减少卡顿。
 - 点击搜索结果后会进入该文件的上级目录，自动滚动至匹配条目；文件名变绿色约 2.6 秒后恢复普通文字颜色。搜索文件夹时也会先显示它所在的父目录。
 - 不执行 EXE、APK，也不读取网络图标；只有 Windows PC 版可直接调用系统原生 EXE 图标。
+
+## V1.0 · Windows PC 发布候选版
+
+**架构不变：** 原 PC V0.8 的 .NET 10 WPF + WebView2、Windows x64 自包含单文件 EXE，保留独立桌面双栏、历史导航、右栏对齐左栏、新建、搜索结果定位高亮、EXE/APK 原生图标、书签、复制/移动/重命名、压缩/解压、文本及 HTML 安全预览、Windows CMD 终端、打开方式、系统分享、SHA-256、数字签名信息等。
+
+**新增/补齐 Android V1.5 的操作：** 左右双栏多选、Ctrl+单击勾选、最多 200 项、当前栏全选、取消选择、长按/右键文件操作、底部常驻批量操作区，左右栏合并批量移入回收站，回收站中批量恢复或永久删除（单次永久删除最多 30 项，明确确认，限制为回收站顶层）。
+
+**两个回收站都保留，互不混淆：**
+- 默认「移入回收站」使用 CFM 自有本地回收站：`%LOCALAPPDATA%\CheemsFileManagerPC\RecycleBin`。恢复到原路径，如原路径已被占用则拒绝覆盖。
+- 「Windows 回收站」打开系统回收站；「系统回收」将选中项送到 Windows 系统回收站（恢复由 Windows 资源管理器完成）。
+- 跨盘 CFM 回收：先复制完成再移除源文件。大文件可能占用较多磁盘空间。
+- 不会绕过 Windows 文件访问权限，拒绝处理目录联接和符号链接。
+
+**发布注意：** GitHub Actions 能验证 .NET 构建、文件系统测试与 HTML/JS 模拟交互，不等于已在所有 Windows 10/11 真机验证。发布前请用可丢弃测试文件核对双栏多选、恢复、永久删除、系统回收站及 WebView2。EXE 未代码签名，可能触发 Windows 未知发布者提示，不要通过关闭杀毒软件来运行。
+
+GitHub Actions 分支：`cfm-pc-web-v1.0-release`，产物名称：`CheemsFileManager-PC-V1.0-Full-win-x64`。
