@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="brand"><span class="brand-mark"><img src="icon.webp" alt="CFM 图标"></span><span class="brand-text">Cheems File Manager <small>Android · V1.2 图标修复</small></span></div>
+      <div class="brand"><span class="brand-mark"><img src="icon.webp" alt="CFM 图标"></span><span class="brand-text">Cheems File Manager <small>Android · V1.4 双栏多选</small></span></div>
       <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
     </header>
 
@@ -30,6 +30,10 @@
       <button id="move" title="移动到另一栏">⇄ 移动</button>
       <button id="new" title="在当前栏创建文件夹">＋ 文件夹</button>
       <button id="rename" title="重命名（F2）">✎ 重命名</button>
+      <button id="multi-select" title="进入多选模式，左右两栏都能勾选文件" aria-pressed="false">☐ 多选</button>
+      <button id="select-all" title="选中当前栏可见的全部文件（最多 200 项）">☑ 当前栏全选</button>
+      <button id="clear-selection" title="清空左右两栏的选中项">✕ 取消选择</button>
+      <span id="multi-count" class="cfm-selection-info">已选 左 0 · 右 0 · 共 0 项</span>
       <button id="send-trash" class="danger" title="把选中的项目移入 CFM 本地回收站">♲ 移入回收站</button>
       <button id="delete" title="打开 CFM 本地回收站，无需选择文件">▣ 打开回收站</button>
       <button id="restore-trash" title="恢复回收站里选中的文件（需要先打开回收站）">⟲ 恢复</button>
@@ -69,7 +73,7 @@
     </main>
     <footer class="status">
       <span id="status-text">准备就绪</span>
-      <span>双栏默认对齐 · 长按回收站项目可恢复/永久删除</span>
+      <span>☑ 多选：左/右栏勾选 → 长按已选项 → 批量回收或永久删除</span>
     </footer>
   </div>
 
