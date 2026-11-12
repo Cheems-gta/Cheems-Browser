@@ -580,8 +580,15 @@ function oneItem() {
 
 async function mutate(action,args,successText) {
   return guarded(async()=>{
-    const out=await call(action,args);
-    await Promise.all(state.panes.map((pane,index)=>pane.path?navigate(index,pane.path).catch(()=>{}):Promise.resolve()));
+    let out;
+    try {
+      out=await call(action,args);
+    } finally {
+      // Even when a filesystem batch fails partway through, refresh both
+      // panes so the user sees what actually changed (not stale rows).
+      await Promise.all(state.panes.map((pane,index)=>
+        pane.path?navigate(index,pane.path).catch(()=>{}):Promise.resolve()));
+    }
     toast(successText || "操作已完成");
     return out;
   });
