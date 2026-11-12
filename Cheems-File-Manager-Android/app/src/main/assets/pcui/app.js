@@ -181,7 +181,8 @@ window.CFMNav = {
   newFile:createEmptyFile,
   newHtml:newHtml,
   sync:syncOtherPane,
-  up:()=>up()
+  up:()=>up(),
+  multi:()=>toggleMultiSelect()
 };
 
 
