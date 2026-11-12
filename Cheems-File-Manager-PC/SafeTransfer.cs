@@ -35,6 +35,12 @@ public static class SafeTransfer
     }
     public static void Run(string source,string target,bool move,bool overwrite)
     {
+        source=Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar,Path.AltDirectorySeparatorChar);
+        target=Path.GetFullPath(target).TrimEnd(Path.DirectorySeparatorChar,Path.AltDirectorySeparatorChar);
+        if(string.Equals(source,target,StringComparison.OrdinalIgnoreCase)
+            || source.StartsWith(target+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)
+            || target.StartsWith(source+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))
+            throw new IOException("源和目标不能相同或互为父子路径");
         Check(source);
         if(Exists(target))
         {

@@ -243,6 +243,12 @@ static class Program
                 return r.GetProperty("failed").GetArrayLength()==1 && r.GetProperty("count").GetInt32()==1
                     && restored.GetProperty("count").GetInt32()==1 && File.ReadAllText(a)=="recover";
             });
+            Check("Overwrite cannot replace an ancestor containing the source",()=>{
+                string outer=Path.Combine(left,"ancestor"),inner=Path.Combine(left,"ancestor","nested","ancestor");
+                Directory.CreateDirectory(inner);File.WriteAllText(Path.Combine(inner,"keep.txt"),"keep");
+                var r=Api("move",new{paths=new[]{inner},target=left,conflict="overwrite"});
+                return r.GetProperty("failed").GetArrayLength()==1 && File.ReadAllText(Path.Combine(inner,"keep.txt"))=="keep";
+            });
             string? otherRoot=DriveInfo.GetDrives().Where(d=>d.IsReady && d.DriveType==DriveType.Fixed)
                 .Select(d=>d.RootDirectory.FullName).FirstOrDefault(r=>!string.Equals(r,Path.GetPathRoot(temp),StringComparison.OrdinalIgnoreCase));
             if(otherRoot!=null)
