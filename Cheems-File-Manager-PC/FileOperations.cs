@@ -44,8 +44,12 @@ public static class FileOperations
         "mkdir" => NewFolder(S(args, "path"), S(args, "name")),
         "newFile" => NewFile(S(args, "path"), S(args, "name")),
         "newHtml" => NewHtml(S(args, "path"), S(args, "name")),
-        "recycle" => Recycle(Paths(args)),
-        "openTrash" => OpenTrash(),
+        "recycle" => CfmTrash.Recycle(Paths(args)),
+        "openTrash" => CfmTrash.Open(),
+        "restore" => CfmTrash.Restore(Paths(args)),
+        "permanentDelete" => CfmTrash.PermanentDelete(Paths(args)),
+        "windowsRecycle" => Recycle(Paths(args)),
+        "openWindowsTrash" => OpenTrash(),
         "extract" => ExpandedArchive.Extract(S(args, "path"), S(args, "target")),
         "shell" => Shell(S(args, "cwd"), S(args, "command")),
         "terminalWindow" => OpenTerminalWindow(S(args, "cwd")),
@@ -191,6 +195,7 @@ public static class FileOperations
             desktop,
             documents,
             downloads,
+            trash = CfmTrash.DirectoryPath,
             drives = DriveInfo.GetDrives().Where(d => d.IsReady)
                 .Select(d => new { path = d.Name, label = d.Name.TrimEnd('\\') })
                 .ToArray()
@@ -202,7 +207,10 @@ public static class FileOperations
         string full = Path.GetFullPath(input);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("目录不存在：" + full);
         var items = new List<FileEntry>();
-        var listing = Directory.EnumerateFileSystemEntries(full).Take(2001).ToArray();
+        var listing = Directory.EnumerateFileSystemEntries(full)
+            .Where(p => !string.Equals(full, CfmTrash.DirectoryPath, StringComparison.OrdinalIgnoreCase) ||
+                        !Path.GetFileName(p).StartsWith(".cfm_index.json", StringComparison.OrdinalIgnoreCase))
+            .Take(2001).ToArray();
         foreach (string path in listing.Take(2000))
         {
             try
