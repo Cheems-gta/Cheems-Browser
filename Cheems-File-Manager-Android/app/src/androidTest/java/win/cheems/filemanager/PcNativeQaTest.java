@@ -161,6 +161,50 @@ public final class PcNativeQaTest {
         return target;
     }
 
+    @Test public void bulkRecycleAndPermanentDeleteWorksAcrossFolders() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertTrue(Environment.isExternalStorageManager());
+        String stamp="CFM_QA_BULK_"+UUID.randomUUID().toString().replace("-","");
+        File baseDir=new File(Environment.getExternalStorageDirectory(),"Download/"+stamp);
+        File left=new File(baseDir,"Left");
+        File right=new File(baseDir,"Right");
+        assertTrue(left.mkdirs());
+        assertTrue(right.mkdirs());
+        File one=new File(left,stamp+"_one.txt");
+        File two=new File(left,stamp+"_two.txt");
+        File three=new File(right,stamp+"_three.txt");
+        File trash=new File(Environment.getExternalStorageDirectory(),".CFM_RecycleBin");
+        File recycledOne=new File(trash,one.getName());
+        File recycledTwo=new File(trash,two.getName());
+        File recycledThree=new File(trash,three.getName());
+        try {
+            assertTrue(one.createNewFile());
+            assertTrue(two.createNewFile());
+            assertTrue(three.createNewFile());
+            JSONArray chosen=new JSONArray().put(one.getPath()).put(two.getPath()).put(three.getPath());
+            JSONObject moved=PcNativeFileApi.execute(ctx,"recycle",new JSONObject().put("paths",chosen));
+            assertEquals(3,moved.getInt("count"));
+            assertFalse(one.exists());assertFalse(two.exists());assertFalse(three.exists());
+            assertTrue(recycledOne.exists());assertTrue(recycledTwo.exists());
+            assertTrue(recycledThree.exists());
+            JSONArray delete=new JSONArray().put(recycledOne.getPath()).put(recycledThree.getPath());
+            JSONObject removed=PcNativeFileApi.execute(ctx,"permanentDelete",
+                new JSONObject().put("paths",delete));
+            assertEquals(2,removed.getInt("count"));
+            assertFalse(recycledOne.exists());assertFalse(recycledThree.exists());
+            assertTrue(recycledTwo.exists());
+            // The only remaining test file can still be restored.
+            PcNativeFileApi.execute(ctx,"restore",
+                new JSONObject().put("paths",new JSONArray().put(recycledTwo.getPath())));
+            assertTrue(two.exists());
+        } finally {
+            deleteSafe(recycledOne);
+            deleteSafe(recycledTwo);
+            deleteSafe(recycledThree);
+            deleteSafe(baseDir);
+        }
+    }
+
     @Test public void nativeFileOperationsWorkOnAndroidEmulator() throws Exception {
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
         assertTrue("CI emulator must grant MANAGE_EXTERNAL_STORAGE",
