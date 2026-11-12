@@ -299,6 +299,7 @@ function entryIcon(item) {
 // Android preview touch input: emulate a desktop right click after a hold.
 // A normal tap still selects a file and scrolling remains unchanged.
 let suppressTouchClickUntil = 0;
+let suppressTouchClickPath = null;
 /* MT-style touch multi-select: each pane holds its own choices. Only
    destructive batch commands aggregate both panes, not copy/move/edit. */
 function selectedAcrossPanes() {
@@ -472,7 +473,7 @@ function render(index) {
     row.append(nameCell,modified,size);
 
     row.addEventListener("click",e=>{
-      if (Date.now() < suppressTouchClickUntil) {
+      if (Date.now() < suppressTouchClickUntil && suppressTouchClickPath === item.path) {
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -498,7 +499,7 @@ function render(index) {
       e.preventDefault();
       // The Android WebView may emit its own contextmenu after our hold timer.
       // Don't show the same menu twice.
-      if (Date.now() < suppressTouchClickUntil) return;
+      if (Date.now() < suppressTouchClickUntil && suppressTouchClickPath === item.path) return;
       showFileActionsAt(index,item,e.clientX,e.clientY);
     });
     if (isAndroidBuild()) {
@@ -519,6 +520,7 @@ function render(index) {
           holdTimer=null;
           holdTriggered=true;
           suppressTouchClickUntil=Date.now()+900;
+          suppressTouchClickPath=item.path;
           showFileActionsAt(index,item,x,y);
         }, 480);
       }, {passive:true});
