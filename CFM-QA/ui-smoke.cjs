@@ -70,9 +70,7 @@ function mockAction(action,args){
   case "search":return {results:[{
     name:"sample.zip",path:downloads+"/sample.zip",isDir:false
   }],scanned:12,truncated:false};
-  case "openTrash":return mode==="android"
-    ? {path:trash,message:"已打开 CFM 回收站"}
-    : {message:"已在 Windows 资源管理器中打开回收站"};
+  case "openTrash":return {path:trash,message:"已打开 CFM 回收站"};
   case "restore":return {count:args.paths.length,message:"已恢复"};
   case "permanentDelete":return {count:args.paths.length,message:"已永久删除"};
   case "recycle":return {count:args.paths.length,message:"已移入回收站"};
@@ -182,17 +180,36 @@ async function test(label,fn){
       '#entries0 .entry[data-path$="sample.apk"] img.native-file-icon');
     assert.ok(icon.src.startsWith("data:image/png;base64,"));
   });
+  await test("full PC UI includes V1.5 batch selection controls",async()=>{
+    for(const id of ["multi-select","select-all","clear-selection",
+        "selection-bar","selection-delete","selection-restore","selection-more",
+        "permanent-trash","windows-trash","windows-recycle"]) {
+      assert.ok(w.document.getElementById(id),"Missing #"+id);
+    }
+  });
+  await test("left and right panes multi-select together and batch to CFM trash",async()=>{
+    await setPath(0,downloads);
+    await setPath(1,home);
+    w.document.getElementById("multi-select").click();
+    w.document.querySelector('#entries0 .entry[data-path$="sample.zip"]').click();
+    w.document.querySelector('#entries1 .entry[data-path$="alpha.txt"]').click();
+    assert.match(w.document.getElementById("multi-count").textContent,/共 2 项/);
+    assert.equal(w.document.querySelectorAll('.entry.selected').length,2);
+    assert.ok(!w.document.getElementById("selection-bar").classList.contains("hidden"));
+    w.document.getElementById("selection-delete").click();
+    await waitFor(()=>requests.some(x=>x.action==="recycle" && x.args.paths.length===2));
+    w.document.getElementById("multi-select").click();
+    await setPath(1,downloads);
+  });
   await test("Open Trash works without selecting a file",async()=>{
     const before=requests.filter(x=>x.action==="recycle").length;
     w.document.querySelector("#delete").click();
     await waitFor(()=>requests.some(x=>x.action==="openTrash"));
-    if(mode==="android")
-      await waitFor(()=>w.document.querySelector("#path0").value===trash);
-    else assert.equal(w.document.querySelector("#path0").value,downloads);
+    await waitFor(()=>w.document.querySelector("#path0").value===trash);
     assert.equal(requests.filter(x=>x.action==="recycle").length,before);
   });
   await test("Send To Trash only acts on selected files",async()=>{
-    if(mode==="android")await setPath(0,downloads);
+    await setPath(0,downloads);
     const row=w.document.querySelector("#entries0 .entry[data-path]");
     assert.ok(row);
     row.click();
