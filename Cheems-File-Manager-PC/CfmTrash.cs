@@ -79,7 +79,33 @@ public static class CfmTrash
         Directory.CreateDirectory(DirectoryPath);
         return new {path=DirectoryPath,message="CFM 回收站：可多选恢复或永久删除"};
     }
+    private static object Batch(string[] paths, Func<string[],object> operation)
+    {
+        var done=new List<object>(); var failed=new List<object>();
+        foreach(var path in paths)
+        {
+            try { operation(new[]{path}); done.Add(new {path}); }
+            catch(Exception ex) when(ex is IOException or UnauthorizedAccessException)
+            { failed.Add(new {path,error=ex.Message}); }
+        }
+        return new {count=done.Count,done,failed,skipped=Array.Empty<string>()};
+    }
     public static object Recycle(string[] sources)
+    {
+        if(sources.Any(p=>sources.Any(q=>!string.Equals(Path.GetFullPath(p),Path.GetFullPath(q),StringComparison.OrdinalIgnoreCase)
+            && Path.GetFullPath(p).StartsWith(Path.GetFullPath(q).TrimEnd('\\','/')+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))))
+            throw new IOException("不能同时选中父文件夹及其内部文件");
+        return Batch(sources,RecycleCore);
+    }
+    public static object Restore(string[] paths) => Batch(paths,RestoreCore);
+    public static object PermanentDelete(string[] paths)
+    {
+        if(paths.Length>30) throw new IOException("每次永久删除最多 30 项");
+        // Keep whole-batch scope checks before any destructive operation.
+        foreach(var path in paths) NoLinks(Stored(path));
+        return Batch(paths,PermanentDeleteCore);
+    }
+    private static object RecycleCore(string[] sources)
     {
         lock(Gate)
         {
@@ -119,7 +145,7 @@ public static class CfmTrash
             return new {count=done,message="已移入 CFM 本地回收站"};
         }
     }
-    public static object Restore(string[] paths)
+    private static object RestoreCore(string[] paths)
     {
         lock(Gate)
         {
@@ -139,7 +165,7 @@ public static class CfmTrash
             return new {count=done,message="已恢复 "+done+" 项到原位置"};
         }
     }
-    public static object PermanentDelete(string[] paths)
+    private static object PermanentDeleteCore(string[] paths)
     {
         if(paths.Length>30) throw new IOException("每次永久删除最多 30 项");
         lock(Gate)

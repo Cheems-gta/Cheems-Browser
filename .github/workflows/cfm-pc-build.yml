@@ -26,9 +26,11 @@ jobs:
         with:
           node-version: '22'
       - name: Install UI test dependency
-        run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0
+        run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0 playwright@1.56.1
       - name: Test real PC HTML+JS interactions in simulated browser
         run: node CFM-QA/ui-smoke.cjs pc
+      - name: Test responsive layout in real Edge
+        run: node CFM-QA/layout.cjs
       - name: Generate Cheems Windows icon from approved artwork
         shell: pwsh
         run: |
