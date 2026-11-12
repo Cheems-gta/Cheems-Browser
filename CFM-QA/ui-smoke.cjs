@@ -329,6 +329,9 @@ async function test(label,fn){
     await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
   });
   await test("holding an unselected row never includes the previously checked batch",async()=>{
+    // Previous test held sample.zip; Android intentionally suppresses the
+    // synthetic tap on THAT row for 900 ms after the long press.
+    await new Promise(resolve=>setTimeout(resolve,950));
     w.document.querySelector("#clear-selection").click();
     await setPath(0,home);
     await setPath(1,downloads);
