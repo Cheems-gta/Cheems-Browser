@@ -385,38 +385,34 @@ function showFileActionsAt(index, item, x, y) {
   const pane = state.panes[index];
   switchActive(index);
   if (!pane.selected.has(item.path)) {
-    if(state.multiSelect) pane.selected.add(item.path);
-    else {
-      for(const other of state.panes)other.selected.clear();
-      pane.selected.add(item.path);
-    }
+    // Holding an unselected row is an explicit single-target action.
+    // Never silently add an unrelated file to a pending destructive batch.
+    for(const other of state.panes)other.selected.clear();
+    pane.selected.add(item.path);
+    if(state.multiSelect)toast("长按的是未选中项：已取消原多选，只选中当前文件");
   }
   for(const n of [0,1])showSelection(n);
   contextMenu(x, y, item);
 }
 function mobileActionsForSelection() {
-  const pane = activePane();
-  const selected = [...pane.selected];
-  if (!selected.length) {
-    toast("先点一下选中文件，再点「⋮ 文件操作」；也可以直接长按文件。");
+  // "⋮ 文件操作" works even when all checked files belong to the other pane.
+  // Keep the original checked batch intact.
+  const indices=[state.active,1-state.active];
+  let item=null;
+  for(const index of indices) {
+    const pane=state.panes[index];
+    item=pane.items.find(entry=>pane.selected.has(entry.path))||null;
+    if(item) {switchActive(index);break;}
+  }
+  if(!item) {
+    toast("先点选文件，或开启「多选」后从左右两栏选择文件");
     return;
   }
-  // Long-press an existing selection or use this button for a batch menu.
-  // Never discard the remaining checked files.
-  if (selected.length>1) {
-    const item=pane.items.find(v=>v.path===selected[0]);
-    if(item) {
-      contextMenu(window.innerWidth/3,window.innerHeight/3,item);
-      return;
-    }
-  }
-  const item = pane.items.find(v => v.path === selected[0]);
-  if (!item) { toast("选中的文件已变化，请刷新目录"); return; }
-  const anchor = document.getElementById("mobile-file-actions");
-  const rect = anchor ? anchor.getBoundingClientRect() : null;
-  const x = rect ? rect.left : window.innerWidth / 2;
-  const y = rect ? rect.bottom + 3 : window.innerHeight / 3;
-  contextMenu(x, y, item);
+  const anchor=document.getElementById("mobile-file-actions");
+  const rect=anchor?anchor.getBoundingClientRect():null;
+  const x=rect?rect.left:window.innerWidth/2;
+  const y=rect?rect.bottom+3:window.innerHeight/3;
+  contextMenu(x,y,item);
 }
 function render(index) {
   const pane=state.panes[index], target=$("#entries"+index);
