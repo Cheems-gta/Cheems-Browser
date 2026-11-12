@@ -54,7 +54,9 @@ w.chrome={webview:{
 if(mode==="android")w.AndroidFileApi={postMessage(){}};
 w.confirm=()=>true;
 w.prompt=(title,def="")=>def||"new.txt";
-w.alert=()=>{};
+const alerts=[];
+w.alert=text=>alerts.push(text);
+let partialTransfer=false;
 function mockAction(action,args){
  switch(action){
   case "init":return {home,desktop:home,documents:home,downloads,
@@ -74,7 +76,7 @@ function mockAction(action,args){
   case "restore":return {count:args.paths.length,message:"已恢复"};
   case "permanentDelete":return {count:args.paths.length,message:"已永久删除"};
   case "recycle":return {count:args.paths.length,message:"已移入回收站"};
-  case "copy":case "move":return {count:args.paths.length};
+  case "copy":case "move":return partialTransfer ? {count:0,done:[],skipped:[],failed:[{path:args.paths[0],error:"fixture denied"}]} : {count:args.paths.length};
   case "mkdir":case "newFile":case "newHtml":
     return {path:args.path+"/"+args.name};
   case "rename":return {path:args.path};
@@ -238,6 +240,17 @@ async function test(label,fn){
     await waitFor(()=>requests.some(x=>x.action==="newFile"));
     await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
   });
+  if(mode==="pc") await test("transfer forwards conflict policy and reports individual failures",async()=>{
+    await setPath(0,home);
+    w.document.querySelector("#entries0 .entry[data-path]").click();
+    w.document.querySelector("#transfer-conflict").value="skip";
+    partialTransfer=true;
+    w.document.querySelector("#copy").click();
+    await waitFor(()=>requests.some(r=>r.action==="copy" && r.args.conflict==="skip"));
+    await waitFor(()=>alerts.some(a=>a.includes("fixture denied")));
+    assert.ok(alerts.some(a=>a.includes("失败 1 项")));
+    partialTransfer=false;
+  });
   await test("HTML and archive buttons exist",async()=>{
     assert.ok(w.document.querySelector("#html-button"));
     assert.ok(w.document.querySelector("#extract"));
@@ -259,3 +272,4 @@ async function test(label,fn){
  console.log("RESULT | MODE="+mode+"; PASS="+passed+"; FAIL="+failed);
  process.exitCode=failed?1:0;
 })().catch(e=>{console.error("FAIL | QA setup | "+e.stack);process.exitCode=1;dom.window.close();});
+

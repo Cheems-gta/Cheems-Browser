@@ -105,8 +105,9 @@ static class Program
             });
             Check("ZIP packs the selected file into opposite pane",()=>{
                 var outFile=Api("zip",new {paths=new[]{renamed},target=right}).GetProperty("path").GetString();
-                return outFile!=null && File.Exists(outFile)
-                    && ZipFile.OpenRead(outFile).Entries.Any(e=>e.FullName=="renamed.txt");
+                if(outFile==null || !File.Exists(outFile)) return false;
+                using var archive=ZipFile.OpenRead(outFile);
+                return archive.Entries.Any(e=>e.FullName=="renamed.txt");
             });
             Check("APK icon reader returns embedded launcher image",()=>{
                 string apk=Path.Combine(left,"icon-test.apk");
@@ -223,6 +224,24 @@ static class Program
                 Api("save",new{path=p,text="second",bom=false}); Api("save",new{path=p,text="third",bom=false});
                 return File.ReadAllText(p)=="third" && File.ReadAllText(p+".cfm.bak")=="second"
                     && Directory.GetFiles(left,"*.cfm-save-*").Length==0;
+            });
+            Check("Failed overwrite preserves source and existing destination",()=>{
+                string a=Path.Combine(left,"locked-dir"),b=Path.Combine(right,"locked-dir");
+                Directory.CreateDirectory(a);Directory.CreateDirectory(b);
+                string locked=Path.Combine(a,"locked.txt");File.WriteAllText(locked,"source");
+                File.WriteAllText(Path.Combine(b,"old.txt"),"old");
+                using var handle=new FileStream(locked,FileMode.Open,FileAccess.ReadWrite,FileShare.None);
+                var r=Api("move",new{paths=new[]{a},target=right,conflict="overwrite"});
+                return r.GetProperty("failed").GetArrayLength()==1 && File.Exists(locked)
+                    && File.ReadAllText(Path.Combine(b,"old.txt"))=="old";
+            });
+            Check("Trash batch reports failure and continues",()=>{
+                string a=Path.Combine(left,"trash-batch-"+Guid.NewGuid().ToString("N")+".txt");File.WriteAllText(a,"recover");
+                var r=Api("recycle",new{paths=new[]{Path.Combine(left,"absent.txt"),a}});
+                string stored=Directory.GetFiles(CfmTrash.DirectoryPath).Single(p=>p.EndsWith(Path.GetFileName(a)));
+                var restored=Api("restore",new{paths=new[]{stored}});
+                return r.GetProperty("failed").GetArrayLength()==1 && r.GetProperty("count").GetInt32()==1
+                    && restored.GetProperty("count").GetInt32()==1 && File.ReadAllText(a)=="recover";
             });
             string? otherRoot=DriveInfo.GetDrives().Where(d=>d.IsReady && d.DriveType==DriveType.Fixed)
                 .Select(d=>d.RootDirectory.FullName).FirstOrDefault(r=>!string.Equals(r,Path.GetPathRoot(temp),StringComparison.OrdinalIgnoreCase));
