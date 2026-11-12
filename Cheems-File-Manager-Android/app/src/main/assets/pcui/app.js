@@ -6,7 +6,7 @@ const state = {
     {path:"", parent:null, items:[], selected:new Set(), filter:"", truncated:false, history:[], historyPos:-1}
   ],
   active:0, locations:null, editor:null, pending:new Map(), sequence:0, tasks:0,
-  previewVisible:false
+  previewVisible:false, multiSelect:false
 };
 
 const $ = selector => document.querySelector(selector);
@@ -298,14 +298,98 @@ function entryIcon(item) {
 // Android preview touch input: emulate a desktop right click after a hold.
 // A normal tap still selects a file and scrolling remains unchanged.
 let suppressTouchClickUntil = 0;
+/* MT-style touch multi-select: each pane holds its own choices. Only
+   destructive batch commands aggregate both panes, not copy/move/edit. */
+function selectedAcrossPanes() {
+  const combined=[];
+  const seen=new Set();
+  for(const pane of state.panes) {
+    const visiblePaths=new Set(pane.items.map(item=>item.path));
+    for(const path of pane.selected) {
+      if(!visiblePaths.has(path) || seen.has(path))continue;
+      seen.add(path);
+      combined.push(path);
+    }
+  }
+  if(!combined.length)throw new Error("请先选中文件或文件夹");
+  if(combined.length>200)throw new Error("一次最多处理 200 个文件或文件夹");
+  return combined;
+}
+function selectedCount() {
+  const left=state.panes[0].selected.size;
+  const right=state.panes[1].selected.size;
+  return {left,right,total:new Set([...state.panes[0].selected,...state.panes[1].selected]).size};
+}
+function updateMultiSelectUI() {
+  const toggle=document.getElementById("multi-select");
+  if(toggle) {
+    toggle.classList.toggle("is-on",state.multiSelect);
+    toggle.setAttribute("aria-pressed",String(state.multiSelect));
+    toggle.textContent=state.multiSelect?"☑ 多选中":"☐ 多选";
+  }
+  const count=selectedCount();
+  const status=document.getElementById("multi-count");
+  if(status)status.textContent="已选 左 "+count.left+" · 右 "+count.right+" · 共 "+count.total+" 项";
+  for(const index of [0,1]) {
+    const entry=document.getElementById("entries"+index);
+    if(entry) entry.classList.toggle("is-multi",state.multiSelect);
+  }
+}
+function clearAllSelections() {
+  for(const [index,pane] of state.panes.entries()){
+    pane.selected.clear();
+    showSelection(index);
+  }
+  updateMultiSelectUI();
+}
+function toggleMultiSelect() {
+  state.multiSelect=!state.multiSelect;
+  if(!state.multiSelect)clearAllSelections();
+  else {
+    updateMultiSelectUI();
+    toast("多选已开启：轻点文件勾选，长按已选文件执行批量操作");
+  }
+}
+function selectAllCurrentPane() {
+  if(!state.multiSelect) {
+    state.multiSelect=true;
+    updateMultiSelectUI();
+  }
+  const index=state.active;
+  const pane=state.panes[index];
+  const filter=($("#filter"+index).value||"").trim().toLowerCase();
+  for(const item of pane.items) {
+    if(filter && !item.name.toLowerCase().includes(filter))continue;
+    if(selectedCount().total>=200)break;
+    pane.selected.add(item.path);
+  }
+  showSelection(index);
+  toast("当前栏已选 "+pane.selected.size+" 项；最多合计选择 200 项");
+}
+function avoidNestedSelections(paths) {
+  // When parent and child are both selected in different panes, moving or
+  // deleting the parent already includes the child; double processing fails.
+  const sorted=[...paths].sort((a,b)=>a.length-b.length);
+  for(let i=0;i<sorted.length;i++){
+    for(let j=i+1;j<sorted.length;j++) {
+      if(sorted[j].startsWith(sorted[i]+"/")) {
+        throw new Error("已同时选中父文件夹和其内部文件，请只选择其中一方："+sorted[i]);
+      }
+    }
+  }
+}
+
 function showFileActionsAt(index, item, x, y) {
   const pane = state.panes[index];
   switchActive(index);
   if (!pane.selected.has(item.path)) {
-    pane.selected.clear();
-    pane.selected.add(item.path);
+    if(state.multiSelect) pane.selected.add(item.path);
+    else {
+      for(const other of state.panes)other.selected.clear();
+      pane.selected.add(item.path);
+    }
   }
-  showSelection(index);
+  for(const n of [0,1])showSelection(n);
   contextMenu(x, y, item);
 }
 function mobileActionsForSelection() {
@@ -315,9 +399,14 @@ function mobileActionsForSelection() {
     toast("先点一下选中文件，再点「⋮ 文件操作」；也可以直接长按文件。");
     return;
   }
-  if (selected.length !== 1) {
-    toast("文件操作菜单一次对应一个文件；批量复制、移动可使用顶部按钮。");
-    return;
+  // Long-press an existing selection or use this button for a batch menu.
+  // Never discard the remaining checked files.
+  if (selected.length>1) {
+    const item=pane.items.find(v=>v.path===selected[0]);
+    if(item) {
+      contextMenu(window.innerWidth/3,window.innerHeight/3,item);
+      return;
+    }
   }
   const item = pane.items.find(v => v.path === selected[0]);
   if (!item) { toast("选中的文件已变化，请刷新目录"); return; }
@@ -368,7 +457,11 @@ function render(index) {
     const label=document.createElement("span");
     label.className="name";
     label.textContent=item.name; // Never inject filenames as HTML.
-    nameCell.append(icon,label);
+    const check=document.createElement("span");
+    check.className="cfm-multi-check";
+    check.textContent="✓";
+    check.setAttribute("aria-hidden","true");
+    nameCell.append(check,icon,label);
     const modified=document.createElement("span");
     modified.className="meta modified";
     modified.textContent=item.modified || "—";
@@ -384,16 +477,18 @@ function render(index) {
         return;
       }
       switchActive(index);
-      if(e.ctrlKey) {
-        if(pane.selected.has(item.path)) pane.selected.delete(item.path);
-        else pane.selected.add(item.path);
+      if(state.multiSelect || e.ctrlKey) {
+        if(pane.selected.has(item.path))pane.selected.delete(item.path);
+        else if(selectedCount().total<200)pane.selected.add(item.path);
+        else toast("最多同时选择 200 项",true);
       } else {
-        pane.selected.clear();
+        for(const other of state.panes)other.selected.clear();
         pane.selected.add(item.path);
       }
-      showSelection(index);
+      for(const n of [0,1])showSelection(n);
     });
     row.addEventListener("dblclick",()=>{
+      if(state.multiSelect)return;
       switchActive(index);
       if(item.isDir) guarded(()=>navigate(index,item.path));
       else openItem(item);
@@ -453,6 +548,7 @@ function render(index) {
     fragment.append(empty);
   }
   target.append(fragment);
+  updateMultiSelectUI();
   $("#count"+index).textContent=pane.items.length+" 项";
   $("#foot"+index).textContent=
     (pane.selected.size ? "已选择 "+pane.selected.size+" 项 · " : "")+
@@ -467,6 +563,7 @@ function showSelection(index) {
   $("#foot"+index).textContent=
     (pane.selected.size?"已选择 "+pane.selected.size+" 项 · ":"")+
     "目录共 "+pane.items.length+" 项";
+  updateMultiSelectUI();
 }
 
 function selectedPaths() {
@@ -521,9 +618,9 @@ async function openTrash() {
 }
 async function restoreSelected() {
   try {
-    const paths=selectedPaths();
+    const paths=selectedAcrossPanes();
     if(!state.locations?.trash ||
-       !paths.every(p=>p.startsWith(state.locations.trash+"/"))) {
+       !paths.every(insideTrashTop)) {
       throw new Error("请先打开 CFM 回收站并选中要恢复的文件");
     }
     if(!confirm("恢复选中的 "+paths.length+" 项？\n将尽量恢复到原目录；同名不会覆盖。"))return;
@@ -545,7 +642,8 @@ function updateTrashButtons() {
 }
 async function permanentDeleteSelected() {
   try {
-    const paths=selectedPaths();
+    const paths=selectedAcrossPanes();
+    if(paths.length>30)throw new Error("永久删除每次最多 30 项，请分批处理");
     if(!paths.every(insideTrashTop)){
       toast("只能永久删除 CFM 回收站顶层的文件或文件夹",true);
       return;
@@ -560,8 +658,11 @@ async function permanentDeleteSelected() {
 }
 async function recycle() {
   try {
-    const paths=selectedPaths();
-    if(!confirm("将 "+paths.length+" 项送入 Windows 回收站？\n请先确认不是重要文件。"))return;
+    const paths=selectedAcrossPanes();
+    avoidNestedSelections(paths);
+    if(paths.some(insideTrashTop))throw new Error("已在回收站内的文件不能再次移入回收站，请使用恢复或永久删除");
+    if(!confirm("将左右两栏选中的 "+paths.length+
+      " 项移入 CFM 本地回收站？\n\n此操作不会永久删除，可在 CFM 回收站恢复。"))return;
     await mutate("recycle",{paths},"已移入回收站");
   }catch(e){toast(e.message,true)}
 }
@@ -943,11 +1044,17 @@ function contextMenu(x,y,item) {
   const menu=$("#context");
   menu.replaceChildren();
   const trashed=insideTrashTop(item.path);
-  // Trash entries have dedicated actions; they are not recycled again.
+  // A batch menu is limited to actions that are meaningful for every
+  // selected file. It never renames or edits just one item unexpectedly.
+  const count=selectedCount().total;
+  const batch=count>1;
   const actions=trashed ? [
-    ["♻ 恢复到原目录",restoreSelected],
-    ["🗑 永久删除（无法恢复）",permanentDeleteSelected],
-    ["复制到另一栏",()=>transfer(false)]
+    ["♻ 恢复选中的 "+count+" 项",restoreSelected],
+    ["🗑 永久删除选中的 "+count+" 项",permanentDeleteSelected],
+    ["清空选择",clearAllSelections]
+  ] : batch ? [
+    ["♲ 将选中的 "+count+" 项移入回收站",recycle],
+    ["清空选择",clearAllSelections]
   ] : [
     ["打开 / 编辑",()=>openItem(item)],
     ["复制到另一栏",()=>transfer(false)],
@@ -956,19 +1063,19 @@ function contextMenu(x,y,item) {
     ["移入回收站",recycle],
     ["创建 ZIP",makeZip]
   ];
-  if (!trashed && !item.isDir && isArchive(item.name)) {
+  if (!trashed && !batch && !item.isDir && isArchive(item.name)) {
     actions.push(["📦 直接解压 · 当前目录",()=>extract("current")]);
     actions.push(["📦 直接解压 · 另一栏",()=>extract("other")]);
   }
-  if(!trashed && !item.isDir && /\.html?$/i.test(item.name)){
+  if(!trashed && !batch && !item.isDir && /\.html?$/i.test(item.name)){
     actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
   }
-  if(!trashed && isAndroidBuild() && !item.isDir)
+  if(!trashed && !batch && isAndroidBuild() && !item.isDir)
     actions.push(["↗ 用其他应用打开",()=>openWithAndroid(item)]);
-  if(!trashed) actions.push(["分享给微信 / QQ",shareSelected]);
+  if(!trashed && !batch) actions.push(["分享给微信 / QQ",shareSelected]);
 
-  if(!trashed) actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
-  if(!trashed) actions.push(["＋ 创建 HTML 文件",newHtml]);
+  if(!trashed && !batch) actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
+  if(!trashed && !batch) actions.push(["＋ 创建 HTML 文件",newHtml]);
   if(!isAndroidBuild()) {
     actions.push(["属性",fileProperties]);
     if(!item.isDir)actions.push(["工具 · SHA-256",hashSelected]);
@@ -1007,6 +1114,13 @@ function wire() {
       handler();
     });
   }
+  const multiToggle=$("#multi-select");
+  if(multiToggle)multiToggle.addEventListener("click",toggleMultiSelect);
+  const selectAll=$("#select-all");
+  if(selectAll)selectAll.addEventListener("click",selectAllCurrentPane);
+  const clearAll=$("#clear-selection");
+  if(clearAll)clearAll.addEventListener("click",clearAllSelections);
+  updateMultiSelectUI();
   const touchActions = $("#mobile-file-actions");
   if (touchActions) touchActions.addEventListener("click",e => {e.stopPropagation();mobileActionsForSelection();});
   $("#refresh").addEventListener("click",refreshBoth);
