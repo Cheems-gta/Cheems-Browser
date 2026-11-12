@@ -188,6 +188,16 @@ public final class PcNativeQaTest {
             assertTrue(recycledOne.exists());assertTrue(recycledTwo.exists());
             assertTrue(recycledThree.exists());
             JSONArray delete=new JSONArray().put(recycledOne.getPath()).put(recycledThree.getPath());
+            // If one selected item isn't in the trash, NOTHING in this
+            // batch should be deleted before the validation error.
+            boolean outsideRejected=false;
+            try {
+                PcNativeFileApi.execute(ctx,"permanentDelete",new JSONObject()
+                    .put("paths",new JSONArray().put(recycledOne.getPath())
+                        .put(new File(right,"unrelated.txt").getPath())));
+            } catch(Exception expected) {outsideRejected=true;}
+            assertTrue("Reject mixed safe/unsafe batch",outsideRejected);
+            assertTrue("Valid trash file survives failed preflight",recycledOne.exists());
             JSONObject removed=PcNativeFileApi.execute(ctx,"permanentDelete",
                 new JSONObject().put("paths",delete));
             assertEquals(2,removed.getInt("count"));
