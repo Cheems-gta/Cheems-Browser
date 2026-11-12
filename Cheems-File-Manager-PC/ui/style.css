@@ -125,3 +125,34 @@ button.danger:hover{color:#ffc7c7;background:#4a2d35}
 .native-file-icon{display:block;width:28px;height:28px;max-width:100%;max-height:100%;object-fit:contain;border-radius:5px;flex:none}
 /* A search result flashes green, then returns to the normal text color. */
 .entry.search-hit .file-title .name{color:#48e58a !important;font-weight:700;text-shadow:0 0 4px rgba(40,220,110,.25)}
+
+
+/* Windows original desktop layout; add Android V1.5 usable selection controls. */
+/* MT-like touch multi-selection: explicit mode and per-row check marks. */
+#multi-select.is-on{background:#215b47 !important;border-color:#48bb85 !important;color:#e5fff1 !important}
+.cfm-selection-info{font-size:11px;white-space:nowrap;color:#80d4ae;margin:0 6px}
+.cfm-multi-check{display:none;width:18px;height:18px;flex:none;border:1px solid #818c9b;border-radius:4px;color:transparent;align-items:center;justify-content:center;line-height:18px;background:#20252d;font-size:13px;box-sizing:border-box}
+.entries.is-multi .cfm-multi-check{display:inline-flex}
+.entries.is-multi .entry.selected .cfm-multi-check{background:#2c946c;border-color:#4de2a2;color:white}
+.entries.is-multi .entry.selected{background:#234637 !important;border-left:3px solid #58d6a1}
+.entries.is-multi .entry{user-select:none;-webkit-user-select:none}
+
+
+/* V1.5: persistent, reachable selection actions and phone-sized rows. */
+.selection-bar{flex:none;padding:10px 16px;border-top:1px solid #557c70;background:#202e29}
+.selection-summary,.selection-actions{display:flex;align-items:center;gap:8px}
+.selection-summary>div{flex:1}.selection-summary strong{font-size:16px}
+.selection-summary small{display:block;color:#acd0bd;font-size:12px}
+.selection-bar button{min-height:44px;font-size:14px;border:1px solid #53655d}
+.selection-bar p{margin:4px 0 8px;font-size:12px;color:#bdc9c2}
+.selection-actions #selection-delete{flex:1;background:#286449;border-color:#429c71;font-weight:600}
+.selection-actions #selection-delete[data-action="permanentDelete"]{background:#80333c;border-color:#bb626b}
+button:disabled{opacity:.45;cursor:default}
+
+/* Compact desktop action bar keeps both file panes readable. */
+.selection-bar{padding:7px 14px}
+.selection-summary strong{font-size:13px}
+.selection-bar button{min-height:29px;font-size:12px;padding:5px 10px}
+.selection-bar p{margin:3px 0 4px}
+.selection-actions #selection-delete{flex:0 1 240px}
+.actions #multi-count{align-self:center}
