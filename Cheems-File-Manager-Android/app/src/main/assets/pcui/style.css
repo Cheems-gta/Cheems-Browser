@@ -164,3 +164,8 @@ button:disabled{opacity:.45;cursor:default}
  .context{max-width:95vw;max-height:75dvh;overflow:auto}.context button{font-size:14px;min-height:44px}
  .toast{bottom:150px;max-width:92vw;white-space:normal;font-size:13px;padding:10px 12px}
 }
+
+@media(max-width:700px){
+ .quickbar [data-quick="desktop"],.quickbar [data-quick="documents"],.quickbar #drive,.quickbar .spacer{display:none}
+ .quickbar{justify-content:space-between}.quickbar button{padding:7px 8px}
+}

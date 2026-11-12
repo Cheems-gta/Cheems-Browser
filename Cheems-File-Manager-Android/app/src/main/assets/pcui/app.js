@@ -1284,7 +1284,7 @@ async function start() {
       navigate(1,state.locations.home)
     ]);
     switchActive(0);
-    toast("双栏已对齐；点击 ⇄ 可将右栏重新同步到左栏");
+    toast("长按文件多选 · 双击打开 · 顶部进入回收站");
   }catch(error){
     toast("启动失败："+error.message,true);
   }
