@@ -306,9 +306,15 @@ async function test(label,fn){
   await test("long-press selected file retains both panes and recycles all",async()=>{
     const oldCount=requests.filter(x=>x.action==="recycle").length;
     const right=w.document.querySelector('#entries1 .entry[data-path$="/sample.zip"]');
-    right.dispatchEvent(new w.MouseEvent("contextmenu",{
-      bubbles:true,cancelable:true,clientX:62,clientY:51
-    }));
+    // Use the same 480ms hold gesture as a real Android long press,
+    // not only a synthetic desktop right-click event.
+    const start=new w.Event("touchstart",{bubbles:true,cancelable:true});
+    Object.defineProperty(start,"touches",{value:[{clientX:62,clientY:51}]});
+    right.dispatchEvent(start);
+    await new Promise(r=>setTimeout(r,530));
+    const end=new w.Event("touchend",{bubbles:true,cancelable:true});
+    Object.defineProperty(end,"touches",{value:[]});
+    right.dispatchEvent(end);
     assert.match(w.document.querySelector("#context").textContent,/选中的 3 项移入回收站/);
     assert.match(w.document.querySelector("#multi-count").textContent,/左 1.*右 2.*共 3/);
     const button=[...w.document.querySelectorAll("#context button")].find(b=>b.textContent.includes("移入回收站"));
