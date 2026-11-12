@@ -83,6 +83,7 @@ public final class PcPreviewActivity extends Activity {
         addNavigationButton(bottom, "›", "前进", () -> callNavigation("forward"));
         addNavigationButton(bottom, "+", "新建文件或文件夹", this::showCreateMenu);
         addNavigationButton(bottom, "⇄", "同步左右两栏路径", () -> callNavigation("sync"));
+        addNavigationButton(bottom, "☑", "切换双栏多选模式", () -> callNavigation("multi"));
         addNavigationButton(bottom, "↑", "返回上一级目录", () -> callNavigation("up"));
 
         WebSettings settings = web.getSettings();
@@ -225,6 +226,7 @@ public final class PcPreviewActivity extends Activity {
         // Only fixed literal action names reach evaluateJavascript.
         if (!("back".equals(action) || "forward".equals(action) ||
               "sync".equals(action) || "up".equals(action) ||
+              "multi".equals(action) ||
               "newFolder".equals(action) || "newFile".equals(action) ||
               "newHtml".equals(action))) return;
         web.evaluateJavascript("window.CFMNav && window.CFMNav."+action+"()", null);
