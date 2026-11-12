@@ -22,9 +22,19 @@ jobs:
         with:
           node-version: '22'
       - name: Install UI test dependency
-        run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0
+        run: npm install --no-save --prefix ./CFM-QA jsdom@26.1.0 playwright@1.62.1
       - name: Test Android HTML+JS interactions in simulated browser
         run: node CFM-QA/ui-smoke.cjs android
+      - name: Check phone layout in Chromium
+        run: |
+          cd CFM-QA
+          npx playwright install --with-deps chromium
+          node phone-layout.cjs
+      - name: Upload phone layout preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFM-V1.5-Phone-Layout
+          path: CFM-QA/phone-selection.png
       - name: Static check of mobile pane-selection handlers
         shell: bash
         run: |
