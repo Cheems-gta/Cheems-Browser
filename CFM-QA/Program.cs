@@ -164,6 +164,34 @@ static class Program
             Check("NO recycle without selected paths",()=>
                 Raises("recycle",new {paths=Array.Empty<string>()}));
 
+            string trashCase="cfm_test_"+Guid.NewGuid().ToString("N")+".txt";
+            string original=Path.Combine(left,trashCase);
+            string? storedFile=null;
+            Check("CFM recoverable trash stores file and index",()=>{
+                File.WriteAllText(original,"recoverable CFM QA");
+                var root=Api("openTrash",new{}).GetProperty("path").GetString()!;
+                Api("recycle",new{paths=new[]{original}});
+                storedFile=Directory.GetFiles(root)
+                    .FirstOrDefault(f=>f.EndsWith(trashCase,StringComparison.OrdinalIgnoreCase));
+                return !File.Exists(original)&&storedFile!=null&&File.Exists(storedFile);
+            });
+            Check("CFM permanent delete cannot target outside own recycle root",()=>
+                Raises("permanentDelete",new{paths=new[]{original}}));
+            Check("CFM restore recreates original file with exact content",()=>{
+                if(storedFile==null)return false;
+                Api("restore",new{paths=new[]{storedFile}});
+                return File.ReadAllText(original)=="recoverable CFM QA"&&!File.Exists(storedFile);
+            });
+            Check("CFM permanent delete only removes selected trash entry",()=>{
+                Api("recycle",new{paths=new[]{original}});
+                var root=Api("openTrash",new{}).GetProperty("path").GetString()!;
+                var stored=Directory.GetFiles(root)
+                    .FirstOrDefault(f=>f.EndsWith(trashCase,StringComparison.OrdinalIgnoreCase));
+                if(stored==null)return false;
+                Api("permanentDelete",new{paths=new[]{stored}});
+                return !File.Exists(stored)&&!File.Exists(original);
+            });
+
             // These require interactive shell sessions / real hardware and are
             // explicitly not faked as passing automated tests.
             foreach(string skip in new[]{
