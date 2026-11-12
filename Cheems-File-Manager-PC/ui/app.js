@@ -6,7 +6,7 @@ const state = {
     {path:"", parent:null, items:[], selected:new Set(), filter:"", truncated:false, history:[], historyPos:-1}
   ],
   active:0, locations:null, editor:null, pending:new Map(), sequence:0, tasks:0,
-  previewVisible:false
+  previewVisible:false, multiSelect:false
 };
 
 const $ = selector => document.querySelector(selector);
@@ -50,6 +50,7 @@ function busy(enabled) {
   state.tasks += enabled ? 1 : -1;
   if(state.tasks<0)state.tasks=0;
   $("#busy").classList.toggle("hidden",state.tasks===0);
+  updateMultiSelectUI();
 }
 
 async function guarded(job) {
@@ -62,7 +63,9 @@ async function guarded(job) {
 const activePane = () => state.panes[state.active];
 function switchActive(n) {
   state.active=n;
-  $$(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
+  updateTrashButtons();
+  updateMultiSelectUI();
+  document.querySelectorAll(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
   return state.panes[n];
 }
 function formatBytes(bytes) {
@@ -97,6 +100,7 @@ async function navigate(index,path,historyPosition=null) {
   }
   $("#path"+index).value=data.path;
   render(index);
+  updateTrashButtons();
   return data;
 }
 async function refresh(index) {
@@ -179,7 +183,8 @@ window.CFMNav = {
   newFile:createEmptyFile,
   newHtml:newHtml,
   sync:syncOtherPane,
-  up:()=>up()
+  up:()=>up(),
+  multi:()=>toggleMultiSelect()
 };
 
 
@@ -293,6 +298,160 @@ function entryIcon(item) {
   return {symbol:"▤",type:"file"};
 }
 
+// Android preview touch input: emulate a desktop right click after a hold.
+// A normal tap still selects a file and scrolling remains unchanged.
+let suppressTouchClickUntil = 0;
+let suppressTouchClickPath = null;
+/* MT-style touch multi-select: each pane holds its own choices. Only
+   destructive batch commands aggregate both panes, not copy/move/edit. */
+function selectedAcrossPanes() {
+  const combined=[];
+  const seen=new Set();
+  for(const pane of state.panes) {
+    const visiblePaths=new Set(pane.items.map(item=>item.path));
+    for(const path of pane.selected) {
+      if(!visiblePaths.has(path) || seen.has(path))continue;
+      seen.add(path);
+      combined.push(path);
+    }
+  }
+  if(!combined.length)throw new Error("请先选中文件或文件夹");
+  if(combined.length>200)throw new Error("一次最多处理 200 个文件或文件夹");
+  return combined;
+}
+function selectedCount() {
+  const left=state.panes[0].selected.size;
+  const right=state.panes[1].selected.size;
+  return {left,right,total:new Set([...state.panes[0].selected,...state.panes[1].selected]).size};
+}
+function updateMultiSelectUI() {
+  const toggle=document.getElementById("multi-select");
+  if(toggle) {
+    toggle.classList.toggle("is-on",state.multiSelect);
+    toggle.setAttribute("aria-pressed",String(state.multiSelect));
+    toggle.textContent=state.multiSelect?"☑ 多选中":"☐ 多选";
+  }
+  const count=selectedCount();
+  const bar=$("#selection-bar");
+  if(bar) {
+    bar.classList.toggle("hidden",!state.multiSelect);
+    $("#selection-total").textContent="已选 "+count.total+" 项";
+    $("#selection-detail").textContent="左栏 "+count.left+" · 右栏 "+count.right;
+    const paths=[...new Set(state.panes.flatMap(p=>[...p.selected]))];
+    const hasTrash=paths.some(insideTrashTop);
+    const allTrash=paths.length>0 && paths.every(insideTrashTop);
+    const mixed=hasTrash && !allTrash;
+    const action=$("#selection-delete");
+    action.textContent=allTrash?"永久删除":"移入回收站";
+    action.disabled=!count.total || mixed || state.tasks>0;
+    action.dataset.action=allTrash?"permanentDelete":"recycle";
+    $("#selection-restore").classList.toggle("hidden",!allTrash);
+    $("#selection-restore").disabled=state.tasks>0;
+    $("#selection-hint").textContent=mixed?"普通文件和回收站文件请分开选择":
+      allTrash?"永久删除后无法恢复":"点选文件，再点下方按钮";
+    $("#selection-all").textContent=state.active===0?"全选左栏":"全选右栏";
+  }
+  const status=document.getElementById("multi-count");
+  if(status)status.textContent="已选 左 "+count.left+" · 右 "+count.right+" · 共 "+count.total+" 项";
+  for(const index of [0,1]) {
+    const entry=document.getElementById("entries"+index);
+    if(entry) entry.classList.toggle("is-multi",state.multiSelect);
+  }
+}
+function exitSelection() {
+  state.multiSelect=false;
+  clearAllSelections();
+  $("#context").classList.add("hidden");
+}
+function beginTouchSelection(index,item) {
+  switchActive(index);
+  if(!state.multiSelect) {
+    for(const pane of state.panes)pane.selected.clear();
+    state.multiSelect=true;
+  }
+  if(selectedCount().total<200 || state.panes[index].selected.has(item.path))
+    state.panes[index].selected.add(item.path);
+  else toast("最多同时选择 200 项",true);
+  $("#context").classList.add("hidden");
+  for(const n of [0,1])showSelection(n);
+}
+function clearAllSelections() {
+  for(const [index,pane] of state.panes.entries()){
+    pane.selected.clear();
+    showSelection(index);
+  }
+  updateMultiSelectUI();
+}
+function toggleMultiSelect() {
+  state.multiSelect=!state.multiSelect;
+  if(!state.multiSelect)clearAllSelections();
+  else {
+    updateMultiSelectUI();
+    toast("点选文件，再点底部的操作按钮");
+  }
+}
+function selectAllCurrentPane() {
+  if(!state.multiSelect) {
+    state.multiSelect=true;
+    updateMultiSelectUI();
+  }
+  const index=state.active;
+  const pane=state.panes[index];
+  const filter=($("#filter"+index).value||"").trim().toLowerCase();
+  for(const item of pane.items) {
+    if(filter && !item.name.toLowerCase().includes(filter))continue;
+    if(selectedCount().total>=200)break;
+    pane.selected.add(item.path);
+  }
+  showSelection(index);
+  toast("当前栏已选 "+pane.selected.size+" 项；最多合计选择 200 项");
+}
+function avoidNestedSelections(paths) {
+  // When parent and child are both selected in different panes, moving or
+  // deleting the parent already includes the child; double processing fails.
+  const sorted=[...paths].map(p=>p.replace(/\\/g,"/").toLowerCase()).sort((a,b)=>a.length-b.length);
+  for(let i=0;i<sorted.length;i++){
+    for(let j=i+1;j<sorted.length;j++) {
+      if(sorted[j].startsWith(sorted[i]+"/")) {
+        throw new Error("已同时选中父文件夹和其内部文件，请只选择其中一方："+sorted[i]);
+      }
+    }
+  }
+}
+
+function showFileActionsAt(index, item, x, y) {
+  const pane = state.panes[index];
+  switchActive(index);
+  if (!pane.selected.has(item.path)) {
+    // Holding an unselected row is an explicit single-target action.
+    // Never silently add an unrelated file to a pending destructive batch.
+    for(const other of state.panes)other.selected.clear();
+    pane.selected.add(item.path);
+    if(state.multiSelect)toast("长按的是未选中项：已取消原多选，只选中当前文件");
+  }
+  for(const n of [0,1])showSelection(n);
+  contextMenu(x, y, item);
+}
+function mobileActionsForSelection() {
+  // "⋮ 文件操作" works even when all checked files belong to the other pane.
+  // Keep the original checked batch intact.
+  const indices=[state.active,1-state.active];
+  let item=null;
+  for(const index of indices) {
+    const pane=state.panes[index];
+    item=pane.items.find(entry=>pane.selected.has(entry.path))||null;
+    if(item) {switchActive(index);break;}
+  }
+  if(!item) {
+    toast("先点选文件，或开启「多选」后从左右两栏选择文件");
+    return;
+  }
+  const anchor=document.getElementById("mobile-file-actions");
+  const rect=anchor?anchor.getBoundingClientRect():null;
+  const x=rect?rect.left:window.innerWidth/2;
+  const y=rect?rect.bottom+3:window.innerHeight/3;
+  contextMenu(x,y,item);
+}
 function render(index) {
   const pane=state.panes[index], target=$("#entries"+index);
   const filter=$("#filter"+index).value.trim().toLowerCase();
@@ -334,7 +493,11 @@ function render(index) {
     const label=document.createElement("span");
     label.className="name";
     label.textContent=item.name; // Never inject filenames as HTML.
-    nameCell.append(icon,label);
+    const check=document.createElement("span");
+    check.className="cfm-multi-check";
+    check.textContent="✓";
+    check.setAttribute("aria-hidden","true");
+    nameCell.append(check,icon,label);
     const modified=document.createElement("span");
     modified.className="meta modified";
     modified.textContent=item.modified || "—";
@@ -344,30 +507,75 @@ function render(index) {
     row.append(nameCell,modified,size);
 
     row.addEventListener("click",e=>{
+      if (Date.now() < suppressTouchClickUntil && suppressTouchClickPath === item.path) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       switchActive(index);
-      if(e.ctrlKey) {
-        if(pane.selected.has(item.path)) pane.selected.delete(item.path);
-        else pane.selected.add(item.path);
+      if(state.multiSelect || e.ctrlKey) {
+        if(pane.selected.has(item.path))pane.selected.delete(item.path);
+        else if(selectedCount().total<200)pane.selected.add(item.path);
+        else toast("最多同时选择 200 项",true);
       } else {
-        pane.selected.clear();
+        for(const other of state.panes)other.selected.clear();
         pane.selected.add(item.path);
       }
-      showSelection(index);
+      for(const n of [0,1])showSelection(n);
     });
     row.addEventListener("dblclick",()=>{
+      if(state.multiSelect)return;
       switchActive(index);
       if(item.isDir) guarded(()=>navigate(index,item.path));
       else openItem(item);
     });
     row.addEventListener("contextmenu",e=>{
       e.preventDefault();
-      switchActive(index);
-      if(!pane.selected.has(item.path)) {
-        pane.selected.clear(); pane.selected.add(item.path);
-      }
-      showSelection(index);
-      contextMenu(e.clientX,e.clientY,item);
+      // The Android WebView may emit its own contextmenu after our hold timer.
+      // Don't show the same menu twice.
+      if (Date.now() < suppressTouchClickUntil && suppressTouchClickPath === item.path) return;
+      if(isAndroidBuild())beginTouchSelection(index,item);
+      else showFileActionsAt(index,item,e.clientX,e.clientY);
     });
+    if (isAndroidBuild()) {
+      let holdTimer = null;
+      let touchX=0, touchY=0, holdTriggered=false;
+      const cancelHold = () => {
+        if (holdTimer !== null) clearTimeout(holdTimer);
+        holdTimer = null;
+      };
+      row.addEventListener("touchstart", e => {
+        cancelHold();
+        holdTriggered=false;
+        if (e.touches.length !== 1) return;
+        touchX=e.touches[0].clientX;
+        touchY=e.touches[0].clientY;
+        const x=touchX,y=touchY;
+        holdTimer=setTimeout(() => {
+          holdTimer=null;
+          holdTriggered=true;
+          suppressTouchClickUntil=Date.now()+900;
+          suppressTouchClickPath=item.path;
+          beginTouchSelection(index,item);
+        }, 480);
+      }, {passive:true});
+      row.addEventListener("touchmove",e => {
+        if (e.touches.length!==1 ||
+            Math.abs(e.touches[0].clientX-touchX)>12 ||
+            Math.abs(e.touches[0].clientY-touchY)>12) {
+          cancelHold();
+        }
+      }, {passive:true});
+      row.addEventListener("touchend",e => {
+        cancelHold();
+        if (holdTriggered) {
+          e.preventDefault();
+          holdTriggered=false;
+        }
+      }, {passive:false});
+      row.addEventListener("touchcancel",cancelHold,{passive:true});
+      row.addEventListener("dragstart",e=>e.preventDefault());
+    }
     fragment.appendChild(row);
   }
 
@@ -378,6 +586,7 @@ function render(index) {
     fragment.append(empty);
   }
   target.append(fragment);
+  updateMultiSelectUI();
   $("#count"+index).textContent=pane.items.length+" 项";
   $("#foot"+index).textContent=
     (pane.selected.size ? "已选择 "+pane.selected.size+" 项 · " : "")+
@@ -392,6 +601,7 @@ function showSelection(index) {
   $("#foot"+index).textContent=
     (pane.selected.size?"已选择 "+pane.selected.size+" 项 · ":"")+
     "目录共 "+pane.items.length+" 项";
+  updateMultiSelectUI();
 }
 
 function selectedPaths() {
@@ -407,8 +617,15 @@ function oneItem() {
 
 async function mutate(action,args,successText) {
   return guarded(async()=>{
-    const out=await call(action,args);
-    await Promise.all(state.panes.map((pane,index)=>pane.path?navigate(index,pane.path).catch(()=>{}):Promise.resolve()));
+    let out;
+    try {
+      out=await call(action,args);
+    } finally {
+      // Even when a filesystem batch fails partway through, refresh both
+      // panes so the user sees what actually changed (not stale rows).
+      await Promise.all(state.panes.map((pane,index)=>
+        pane.path?navigate(index,pane.path).catch(()=>{}):Promise.resolve()));
+    }
     toast(successText || "操作已完成");
     return out;
   });
@@ -446,9 +663,9 @@ async function openTrash() {
 }
 async function restoreSelected() {
   try {
-    const paths=selectedPaths();
+    const paths=selectedAcrossPanes();
     if(!state.locations?.trash ||
-       !paths.every(p=>p.startsWith(state.locations.trash+"/"))) {
+       !paths.every(insideTrashTop)) {
       throw new Error("请先打开 CFM 回收站并选中要恢复的文件");
     }
     if(!confirm("恢复选中的 "+paths.length+" 项？\n将尽量恢复到原目录；同名不会覆盖。"))return;
@@ -456,10 +673,56 @@ async function restoreSelected() {
     if(output?.message)toast(output.message);
   }catch(error){toast(error.message,true);}
 }
+function insideTrashTop(path) {
+  const trash=state.locations?.trash;
+  if(!trash || typeof path!=="string")return false;
+  const full=path.replace(/\\/g,"/").replace(/\/+$/,"").toLowerCase();
+  const root=trash.replace(/\\/g,"/").replace(/\/+$/,"").toLowerCase();
+  if(!full.startsWith(root+"/"))return false;
+  const tail=full.slice(root.length+1);
+  return tail.length>0 && !tail.includes("/") && tail!==".cfm_index.json";
+}
+function updateTrashButtons() {
+  const button=document.getElementById("permanent-trash");
+  if(button)button.classList.toggle("hidden",
+    !state.locations?.trash || activePane().path!==state.locations.trash);
+}
+async function permanentDeleteSelected() {
+  try {
+    const paths=selectedAcrossPanes();
+    if(paths.length>30)throw new Error("永久删除每次最多 30 项，请分批处理");
+    if(!paths.every(insideTrashTop)){
+      toast("只能永久删除 CFM 回收站顶层的文件或文件夹",true);
+      return;
+    }
+    const names=paths.map(p=>p.slice(p.lastIndexOf("/")+1));
+    const shown=names.slice(0,4).join("\n")+(names.length>4?"\n……":"");
+    if(!confirm("永久删除以下 "+paths.length+" 项？\n\n"+shown+
+       "\n\n⚠ 此操作不会移入其他回收站，删除后无法通过 CFM 恢复。"))return;
+    const result=await mutate("permanentDelete",{paths},"永久删除完成");
+    if(result?.message)toast(result.message);
+  }catch(error){toast(error.message,true);}
+}
+async function systemRecycle() {
+  try {
+    const paths=selectedAcrossPanes();
+    avoidNestedSelections(paths);
+    if(paths.some(insideTrashTop))throw new Error("回收站中的文件请使用恢复或永久删除");
+    if(!confirm("将 "+paths.length+" 项送入 Windows 系统回收站？"))return;
+    await mutate("windowsRecycle",{paths},"已移入 Windows 系统回收站");
+  }catch(e){toast(e.message,true);}
+}
+async function systemTrash() {
+  const out=await guarded(()=>call("openWindowsTrash",{}));
+  if(out)toast(out.message||"已打开 Windows 回收站");
+}
 async function recycle() {
   try {
-    const paths=selectedPaths();
-    if(!confirm("将 "+paths.length+" 项送入 Windows 回收站？\n请先确认不是重要文件。"))return;
+    const paths=selectedAcrossPanes();
+    avoidNestedSelections(paths);
+    if(paths.some(insideTrashTop))throw new Error("已在回收站内的文件不能再次移入回收站，请使用恢复或永久删除");
+    if(!confirm("将左右两栏选中的 "+paths.length+
+      " 项移入 CFM 本地回收站？\n\n此操作不会永久删除，可在 CFM 回收站恢复。"))return;
     await mutate("recycle",{paths},"已移入回收站");
   }catch(e){toast(e.message,true)}
 }
@@ -492,30 +755,66 @@ function closeEditor() {
   $("#editor-overlay").classList.add("hidden");
   $("#html-preview").srcdoc="";
 }
+async function openWithAndroid(item) {
+  if(!isAndroidBuild()) {
+    toast("系统打开方式仅在 Android 预览中可用");
+    return;
+  }
+  return guarded(async()=>{
+    const response=await call("openWith",{path:item.path});
+    toast(response.message || "已调用 Android 系统打开方式");
+    return response;
+  });
+}
+function showTextEditor(data) {
+  currentEditor=data;
+  $("#editor-file").textContent=data.path;
+  $("#editor-text").value=data.text;
+  $("#editor-text").readOnly=!!data.readOnly;
+  $("#save-editor").disabled=!!data.readOnly;
+  $("#editor-mode").textContent=(data.bom?"UTF-8（带 BOM）":"UTF-8")+
+      (data.readOnly?" · 只读":"");
+  $("#editor-overlay").classList.remove("hidden");
+  $("#preview-button").classList.toggle("hidden",!data.html);
+  state.previewVisible=false;
+  $("#preview-pane").classList.add("hidden");
+  $("#editor-text").focus();
+}
 async function openItem(item) {
   if(item.isDir) return guarded(()=>navigate(state.active,item.path));
-  if(isArchive(item.name)) {
-    toast("已选中压缩包，使用顶部「解压」或右键菜单提取");
-    return;
+  if(!isAndroidBuild()) {
+    if(isArchive(item.name)){
+      toast("请选择压缩包，并使用解压菜单");
+      return;
+    }
+    if(!isText(item.name)){
+      toast("请在 Windows 资源管理器中选择适当的程序打开此类文件");
+      return;
+    }
+    return openEditor(item.path);
   }
-  if(!isText(item.name)) {
-    toast("这不是可直接编辑的纯文本文件；为安全起见 V0.1 不会执行文件。");
-    return;
+  // ZIP/7z and APK are not editable text. Let the system's viewers open
+  // them; the CFM archive extraction feature stays available separately.
+  if(isArchive(item.name) || !isText(item.name))return openWithAndroid(item);
+  try {
+    const data=await call("read",{path:item.path});
+    showTextEditor(data);
+  } catch(error) {
+    const message=String(error.message||error);
+    if(/Shizuku|没有权限|无权限|拒绝访问|未授权/.test(message)) {
+      toast(message,true);
+      return;
+    }
+    // UTF-16 / GBK and oversized text files can be viewed through
+    // an installed editor instead of getting stuck on a UTF-8-only parser.
+    toast("内置编辑器无法读取，尝试用系统应用打开…");
+    return openWithAndroid(item);
   }
-  return openEditor(item.path);
 }
 async function openEditor(path) {
-  await guarded(async()=>{
+  return guarded(async()=>{
     const data=await call("read",{path});
-    currentEditor=data;
-    $("#editor-file").textContent=data.path;
-    $("#editor-text").value=data.text;
-    $("#editor-mode").textContent=data.bom?"UTF-8（带 BOM）":"UTF-8";
-    $("#editor-overlay").classList.remove("hidden");
-    $("#preview-button").classList.toggle("hidden",!data.html);
-    state.previewVisible=false;
-    $("#preview-pane").classList.add("hidden");
-    $("#editor-text").focus();
+    showTextEditor(data);
   });
 }
 async function saveEditor() {
@@ -547,7 +846,8 @@ function togglePreview() {
   if(state.previewVisible)updatePreview();
 }
 
-// PC edition: accessible in-app search, no browser prompt dependency.
+// Touch-friendly search: use an in-app dialog instead of JavaScript prompt(),
+// because Android WebView does not necessarily surface JS prompt dialogs.
 let searchPaneIndex = 0;
 function search() {
   searchPaneIndex=state.active;
@@ -803,7 +1103,22 @@ async function externalTerminal() {
 function contextMenu(x,y,item) {
   const menu=$("#context");
   menu.replaceChildren();
-  const actions=[
+  const trashed=insideTrashTop(item.path);
+  // A batch menu is limited to actions that are meaningful for every
+  // selected file. It never renames or edits just one item unexpectedly.
+  const count=selectedCount().total;
+  const batch=count>1;
+  const actions=trashed ? [
+    ["♻ 恢复选中的 "+count+" 项",restoreSelected],
+    ["🗑 永久删除选中的 "+count+" 项",permanentDeleteSelected],
+    ["清空选择",clearAllSelections]
+  ] : batch ? [
+    ["⧉ 复制当前栏选中项到另一栏",()=>transfer(false)],
+    ["⇄ 移动当前栏选中项到另一栏",()=>transfer(true)],
+    ["▣ 以当前栏选中项创建 ZIP",makeZip],
+    ["♲ 将左右两栏选中的 "+count+" 项移入回收站",recycle],
+    ["清空选择",clearAllSelections]
+  ] : [
     ["打开 / 编辑",()=>openItem(item)],
     ["复制到另一栏",()=>transfer(false)],
     ["移动到另一栏",()=>transfer(true)],
@@ -811,20 +1126,20 @@ function contextMenu(x,y,item) {
     ["移入回收站",recycle],
     ["创建 ZIP",makeZip]
   ];
-  if (!item.isDir && isArchive(item.name)) {
+  if (!trashed && !batch && !item.isDir && isArchive(item.name)) {
     actions.push(["📦 直接解压 · 当前目录",()=>extract("current")]);
     actions.push(["📦 直接解压 · 另一栏",()=>extract("other")]);
   }
-  if(!item.isDir && /\.html?$/i.test(item.name)){
+  if(!trashed && !batch && !item.isDir && /\.html?$/i.test(item.name)){
     actions.push(["〈/〉 HTML 源码 / 安全预览",htmlPreviewSelected]);
   }
-  actions.push([isAndroidBuild()?"分享给微信 / QQ":"分享 / 定位文件",shareSelected]);
-  if(state.locations?.trash && item.path.startsWith(state.locations.trash+"/")) {
-    actions.push(["♻ 恢复到原目录",restoreSelected]);
-  }
-  actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
-  actions.push(["＋ 创建 HTML 文件",newHtml]);
-  if(!isAndroidBuild()) {
+  if(!trashed && !batch && isAndroidBuild() && !item.isDir)
+    actions.push(["↗ 用其他应用打开",()=>openWithAndroid(item)]);
+  if(!trashed && !batch) actions.push(["分享 / 定位文件",shareSelected]);
+
+  if(!trashed && !batch) actions.push(["⌘ 在当前文件夹打开终端",()=>openTerminal(item.isDir?item.path:activePane().path)]);
+  if(!trashed && !batch) actions.push(["＋ 创建 HTML 文件",newHtml]);
+  if(!isAndroidBuild() && !trashed && !batch) {
     actions.push(["属性",fileProperties]);
     if(!item.isDir)actions.push(["工具 · SHA-256",hashSelected]);
     if(!item.isDir && /\.(exe|dll|msi)$/i.test(item.name))
@@ -832,10 +1147,12 @@ function contextMenu(x,y,item) {
     if(!item.isDir)actions.push(["打开方式…",openWithSelected]);
     actions.push(["添加书签",bookmarkCurrent]);
   }
+  if(!trashed && !batch)actions.push(["♻ 送入 Windows 系统回收站",systemRecycle]);
   actions.push(["刷新",refreshBoth]);
   for (const [label,fn] of actions) {
     const b=document.createElement("button");
     b.textContent=label;
+    if(fn===permanentDeleteSelected){b.classList.add("danger");b.style.color="#ff626b";b.style.fontWeight="700";}
     b.addEventListener("click",()=>{menu.classList.add("hidden");fn();});
     menu.append(b);
   }
@@ -861,6 +1178,27 @@ function wire() {
       handler();
     });
   }
+  const multiToggle=$("#multi-select");
+  if(multiToggle)multiToggle.addEventListener("click",toggleMultiSelect);
+  const selectAll=$("#select-all");
+  if(selectAll)selectAll.addEventListener("click",selectAllCurrentPane);
+  const clearAll=$("#clear-selection");
+  if(clearAll)clearAll.addEventListener("click",clearAllSelections);
+  $("#selection-cancel").addEventListener("click",exitSelection);
+  $("#selection-all").addEventListener("click",selectAllCurrentPane);
+  $("#selection-delete").addEventListener("click",()=>{
+    if($("#selection-delete").dataset.action==="permanentDelete")permanentDeleteSelected();
+    else recycle();
+  });
+  $("#selection-restore").addEventListener("click",restoreSelected);
+  $("#selection-more").addEventListener("click",e=>{e.stopPropagation();mobileActionsForSelection();});
+  updateMultiSelectUI();
+  const systemTrashButton=$("#windows-trash");
+  if(systemTrashButton)systemTrashButton.addEventListener("click",systemTrash);
+  const systemRecycleButton=$("#windows-recycle");
+  if(systemRecycleButton)systemRecycleButton.addEventListener("click",systemRecycle);
+  const touchActions = $("#mobile-file-actions");
+  if (touchActions) touchActions.addEventListener("click",e => {e.stopPropagation();mobileActionsForSelection();});
   $("#refresh").addEventListener("click",refreshBoth);
   const terminalButton=$("#terminal-button");
   if(terminalButton)terminalButton.addEventListener("click",()=>openTerminal(activePane().path));
@@ -896,6 +1234,8 @@ function wire() {
   if(sendToTrash) sendToTrash.addEventListener("click",recycle);
   const restoreButton=$("#restore-trash");
   if(restoreButton) restoreButton.addEventListener("click",restoreSelected);
+  const permanentButton=$("#permanent-trash");
+  if(permanentButton) permanentButton.addEventListener("click",permanentDeleteSelected);
   $("#edit").addEventListener("click",()=>{try{const item=oneItem();openItem(item)}catch(e){toast(e.message,true)}});
   $("#extract").addEventListener("click",()=>extract("other"));
   $("#zip").addEventListener("click",makeZip);
@@ -932,6 +1272,7 @@ function wire() {
       $("#context").classList.add("hidden");
       if(!$("#search-overlay").classList.contains("hidden"))$("#search-overlay").classList.add("hidden");
       else if(!$("#editor-overlay").classList.contains("hidden"))closeEditor();
+      else if(state.multiSelect)exitSelection();
       return;
     }
     if(!$("#editor-overlay").classList.contains("hidden")){
@@ -947,7 +1288,11 @@ function wire() {
     if(e.key==="F5"){e.preventDefault();refreshBoth();}
     if(e.key==="Backspace"){e.preventDefault();up();}
     if(e.key==="F2"){e.preventDefault();rename();}
-    if(e.key==="Delete"){e.preventDefault();recycle();}
+    if(e.key==="Delete"){e.preventDefault();
+      const paths=[...state.panes[0].selected,...state.panes[1].selected];
+      if(paths.length && paths.every(insideTrashTop))permanentDeleteSelected();
+      else recycle();
+    }
   });
 }
 
@@ -966,9 +1311,10 @@ async function start() {
       navigate(1,state.locations.home)
     ]);
     switchActive(0);
-    toast("双栏已对齐；点击 ⇄ 可将右栏重新同步到左栏");
+    toast("Windows PC 版：双栏多选 · 右键操作 · 双击打开");
   }catch(error){
     toast("启动失败："+error.message,true);
   }
 }
 window.addEventListener("DOMContentLoaded",start);
+
