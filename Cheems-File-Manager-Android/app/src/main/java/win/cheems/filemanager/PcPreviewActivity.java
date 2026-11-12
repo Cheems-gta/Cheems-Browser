@@ -78,13 +78,13 @@ public final class PcPreviewActivity extends Activity {
         bottom.setGravity(Gravity.CENTER);
         bottom.setBackgroundColor(Color.rgb(46,46,48));
         column.addView(bottom, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(62)));
-        addNavigationButton(bottom, "‹", "后退", () -> callNavigation("back"));
-        addNavigationButton(bottom, "›", "前进", () -> callNavigation("forward"));
-        addNavigationButton(bottom, "+", "新建文件或文件夹", this::showCreateMenu);
-        addNavigationButton(bottom, "⇄", "同步左右两栏路径", () -> callNavigation("sync"));
-        addNavigationButton(bottom, "☑", "切换双栏多选模式", () -> callNavigation("multi"));
-        addNavigationButton(bottom, "↑", "返回上一级目录", () -> callNavigation("up"));
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        addNavigationButton(bottom, "后退", "后退", () -> callNavigation("back"));
+        addNavigationButton(bottom, "前进", "前进", () -> callNavigation("forward"));
+        addNavigationButton(bottom, "新建", "新建文件或文件夹", this::showCreateMenu);
+        addNavigationButton(bottom, "同步", "同步左右两栏路径", () -> callNavigation("sync"));
+        addNavigationButton(bottom, "多选", "切换双栏多选模式", () -> callNavigation("multi"));
+        addNavigationButton(bottom, "上级", "返回上一级目录", () -> callNavigation("up"));
 
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -192,7 +192,7 @@ public final class PcPreviewActivity extends Activity {
                     JSONObject.quote(path)+"))",null);
             }
         });
-        addNavigationButton(bottom,"⋮","Shizuku 连接与目录授权",()->protectedAccess.show());
+        addNavigationButton(bottom,"授权","Shizuku 连接与目录授权",()->protectedAccess.show());
         web.loadUrl(BASE+"index.html");
 
         authorizedOnLastResume = canAccess();
@@ -209,7 +209,7 @@ public final class PcPreviewActivity extends Activity {
         button.setText(symbol);
         button.setContentDescription(purpose);
         button.setTextColor(Color.rgb(207,207,210));
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 31);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         button.setGravity(Gravity.CENTER);
         button.setClickable(true);
         button.setFocusable(true);
@@ -364,6 +364,11 @@ public final class PcPreviewActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
+        if (web == null) { super.onBackPressed(); return; }
+        web.evaluateJavascript("(function(){if(typeof state!=='undefined' && state.multiSelect){exitSelection();return true;}return false;})()",
+            consumed -> { if (!"true".equals(consumed)) finishBack(); });
+    }
+    private void finishBack() {
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
     }
@@ -379,3 +384,4 @@ public final class PcPreviewActivity extends Activity {
         super.onDestroy();
     }
 }
+

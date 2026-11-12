@@ -2,14 +2,14 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=1200, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
   <title>Cheems File Manager · PC</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="brand"><span class="brand-mark"><img src="icon.webp" alt="CFM 图标"></span><span class="brand-text">Cheems File Manager <small>Android · V1.4 双栏多选</small></span></div>
+      <div class="brand"><span class="brand-mark"><img src="icon.webp" alt="CFM 图标"></span><span class="brand-text">Cheems File Manager <small>Android · V1.5 简单多选</small></span></div>
       <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
     </header>
 
@@ -71,9 +71,14 @@
         <div class="pane-foot" id="foot1"></div>
       </section>
     </main>
+    <section id="selection-bar" class="selection-bar hidden" aria-label="已选文件操作">
+      <div class="selection-summary"><div><strong id="selection-total" aria-live="polite">已选 0 项</strong><small id="selection-detail"></small></div><button id="selection-all">全选左栏</button><button id="selection-cancel">取消</button></div>
+      <p id="selection-hint">点选文件，再点下方按钮</p>
+      <div class="selection-actions"><button id="selection-delete" class="primary" disabled>移入回收站</button><button id="selection-restore" class="hidden">恢复</button><button id="selection-more">更多</button></div>
+    </section>
     <footer class="status">
       <span id="status-text">准备就绪</span>
-      <span>☑ 多选：左/右栏勾选 → 长按已选项 → 批量回收或永久删除</span>
+      <span>长按选择 · 双击打开</span>
     </footer>
   </div>
 
@@ -137,3 +142,4 @@
   <script src="app.js" defer></script>
 </body>
 </html>
+

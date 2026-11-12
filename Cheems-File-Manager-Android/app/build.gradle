@@ -10,8 +10,8 @@ android {
         minSdk 30
         targetSdk 35
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        versionCode 14
-        versionName '1.4.0-MultiSelect'
+        versionCode 15
+        versionName '1.5.0-EasySelect'
     }
     buildFeatures {
         aidl true
@@ -36,3 +36,4 @@ dependencies {
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
 }
+

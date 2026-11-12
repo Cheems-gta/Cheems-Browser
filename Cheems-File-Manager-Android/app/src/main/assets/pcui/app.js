@@ -50,6 +50,7 @@ function busy(enabled) {
   state.tasks += enabled ? 1 : -1;
   if(state.tasks<0)state.tasks=0;
   $("#busy").classList.toggle("hidden",state.tasks===0);
+  updateMultiSelectUI();
 }
 
 async function guarded(job) {
@@ -63,6 +64,7 @@ const activePane = () => state.panes[state.active];
 function switchActive(n) {
   state.active=n;
   updateTrashButtons();
+  updateMultiSelectUI();
   document.querySelectorAll(".pane").forEach((element,index)=>element.classList.toggle("active",index===n));
   return state.panes[n];
 }
@@ -330,12 +332,48 @@ function updateMultiSelectUI() {
     toggle.textContent=state.multiSelect?"☑ 多选中":"☐ 多选";
   }
   const count=selectedCount();
+  const bar=$("#selection-bar");
+  if(bar) {
+    bar.classList.toggle("hidden",!state.multiSelect);
+    $("#selection-total").textContent="已选 "+count.total+" 项";
+    $("#selection-detail").textContent="左栏 "+count.left+" · 右栏 "+count.right;
+    const paths=[...new Set(state.panes.flatMap(p=>[...p.selected]))];
+    const hasTrash=paths.some(insideTrashTop);
+    const allTrash=paths.length>0 && paths.every(insideTrashTop);
+    const mixed=hasTrash && !allTrash;
+    const action=$("#selection-delete");
+    action.textContent=allTrash?"永久删除":"移入回收站";
+    action.disabled=!count.total || mixed || state.tasks>0;
+    action.dataset.action=allTrash?"permanentDelete":"recycle";
+    $("#selection-restore").classList.toggle("hidden",!allTrash);
+    $("#selection-restore").disabled=state.tasks>0;
+    $("#selection-hint").textContent=mixed?"普通文件和回收站文件请分开选择":
+      allTrash?"永久删除后无法恢复":"点选文件，再点下方按钮";
+    $("#selection-all").textContent=state.active===0?"全选左栏":"全选右栏";
+  }
   const status=document.getElementById("multi-count");
   if(status)status.textContent="已选 左 "+count.left+" · 右 "+count.right+" · 共 "+count.total+" 项";
   for(const index of [0,1]) {
     const entry=document.getElementById("entries"+index);
     if(entry) entry.classList.toggle("is-multi",state.multiSelect);
   }
+}
+function exitSelection() {
+  state.multiSelect=false;
+  clearAllSelections();
+  $("#context").classList.add("hidden");
+}
+function beginTouchSelection(index,item) {
+  switchActive(index);
+  if(!state.multiSelect) {
+    for(const pane of state.panes)pane.selected.clear();
+    state.multiSelect=true;
+  }
+  if(selectedCount().total<200 || state.panes[index].selected.has(item.path))
+    state.panes[index].selected.add(item.path);
+  else toast("最多同时选择 200 项",true);
+  $("#context").classList.add("hidden");
+  for(const n of [0,1])showSelection(n);
 }
 function clearAllSelections() {
   for(const [index,pane] of state.panes.entries()){
@@ -349,7 +387,7 @@ function toggleMultiSelect() {
   if(!state.multiSelect)clearAllSelections();
   else {
     updateMultiSelectUI();
-    toast("多选已开启：轻点文件勾选，长按已选文件执行批量操作");
+    toast("点选文件，再点底部的操作按钮");
   }
 }
 function selectAllCurrentPane() {
@@ -496,7 +534,8 @@ function render(index) {
       // The Android WebView may emit its own contextmenu after our hold timer.
       // Don't show the same menu twice.
       if (Date.now() < suppressTouchClickUntil && suppressTouchClickPath === item.path) return;
-      showFileActionsAt(index,item,e.clientX,e.clientY);
+      if(isAndroidBuild())beginTouchSelection(index,item);
+      else showFileActionsAt(index,item,e.clientX,e.clientY);
     });
     if (isAndroidBuild()) {
       let holdTimer = null;
@@ -517,7 +556,7 @@ function render(index) {
           holdTriggered=true;
           suppressTouchClickUntil=Date.now()+900;
           suppressTouchClickPath=item.path;
-          showFileActionsAt(index,item,x,y);
+          beginTouchSelection(index,item);
         }, 480);
       }, {passive:true});
       row.addEventListener("touchmove",e => {
@@ -1126,6 +1165,14 @@ function wire() {
   if(selectAll)selectAll.addEventListener("click",selectAllCurrentPane);
   const clearAll=$("#clear-selection");
   if(clearAll)clearAll.addEventListener("click",clearAllSelections);
+  $("#selection-cancel").addEventListener("click",exitSelection);
+  $("#selection-all").addEventListener("click",selectAllCurrentPane);
+  $("#selection-delete").addEventListener("click",()=>{
+    if($("#selection-delete").dataset.action==="permanentDelete")permanentDeleteSelected();
+    else recycle();
+  });
+  $("#selection-restore").addEventListener("click",restoreSelected);
+  $("#selection-more").addEventListener("click",e=>{e.stopPropagation();mobileActionsForSelection();});
   updateMultiSelectUI();
   const touchActions = $("#mobile-file-actions");
   if (touchActions) touchActions.addEventListener("click",e => {e.stopPropagation();mobileActionsForSelection();});
@@ -1202,6 +1249,7 @@ function wire() {
       $("#context").classList.add("hidden");
       if(!$("#search-overlay").classList.contains("hidden"))$("#search-overlay").classList.add("hidden");
       else if(!$("#editor-overlay").classList.contains("hidden"))closeEditor();
+      else if(state.multiSelect)exitSelection();
       return;
     }
     if(!$("#editor-overlay").classList.contains("hidden")){
@@ -1242,3 +1290,4 @@ async function start() {
   }
 }
 window.addEventListener("DOMContentLoaded",start);
+

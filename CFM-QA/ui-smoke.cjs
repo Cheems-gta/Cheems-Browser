@@ -227,6 +227,7 @@ async function test(label,fn){
     row.dispatchEvent(new w.MouseEvent("contextmenu",{
       bubbles:true,cancelable:true,clientX:50,clientY:50
     }));
+    w.document.querySelector("#selection-more").click();
     const menu=w.document.querySelector("#context");
     assert.match(menu.textContent,/永久删除/);
     assert.match(menu.textContent,/恢复/);
@@ -236,6 +237,7 @@ async function test(label,fn){
     await waitFor(()=>requests.some(x=>x.action==="permanentDelete"));
     assert.equal(requests.find(x=>x.action==="permanentDelete").args.paths.join(","),
       trash+"/deleted.txt");
+    w.document.querySelector("#selection-cancel").click();
   });
   await test("permanent delete button only appears inside CFM trash",async()=>{
     await setPath(0,downloads);
@@ -315,9 +317,10 @@ async function test(label,fn){
     const end=new w.Event("touchend",{bubbles:true,cancelable:true});
     Object.defineProperty(end,"touches",{value:[]});
     right.dispatchEvent(end);
-    assert.match(w.document.querySelector("#context").textContent,/选中的 3 项移入回收站/);
+    assert.ok(w.document.querySelector("#context").classList.contains("hidden"));
+    assert.ok(!w.document.querySelector("#selection-bar").classList.contains("hidden"));
     assert.match(w.document.querySelector("#multi-count").textContent,/左 1.*右 2.*共 3/);
-    const button=[...w.document.querySelectorAll("#context button")].find(b=>b.textContent.includes("移入回收站"));
+    const button=w.document.querySelector("#selection-delete");
     assert.ok(button);
     button.click();
     await waitFor(()=>requests.filter(x=>x.action==="recycle").length>oldCount);
@@ -328,7 +331,7 @@ async function test(label,fn){
     assert.equal(JSON.stringify(got),JSON.stringify(expected));
     await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
   });
-  await test("holding an unselected row never includes the previously checked batch",async()=>{
+  await test("holding an unselected row adds it without losing earlier selections",async()=>{
     // Previous test held sample.zip; Android intentionally suppresses the
     // synthetic tap on THAT row for 900 ms after the long press.
     await new Promise(resolve=>setTimeout(resolve,950));
@@ -341,12 +344,12 @@ async function test(label,fn){
     left.click();
     right.click();
     assert.match(w.document.querySelector("#multi-count").textContent,/共 2 项/);
-    // A long-press on a DIFFERENT, unchecked file must reset the batch.
+    // Holding another row adds it; no file is deleted by this gesture.
     unrelated.dispatchEvent(new w.MouseEvent("contextmenu",{
       bubbles:true,cancelable:true,clientX:32,clientY:45
     }));
-    assert.match(w.document.querySelector("#multi-count").textContent,/左 0.*右 1.*共 1/);
-    assert.equal(left.classList.contains("selected"),false);
+    assert.match(w.document.querySelector("#multi-count").textContent,/左 1.*右 2.*共 3/);
+    assert.equal(left.classList.contains("selected"),true);
     assert.equal(unrelated.classList.contains("selected"),true);
     assert.ok(!w.document.querySelector("#context").textContent.includes("选中的 2 项"));
     // Don't actually recycle this fixture; continue testing with clear selection.
@@ -373,10 +376,9 @@ async function test(label,fn){
     selected.dispatchEvent(new w.MouseEvent("contextmenu",{
       bubbles:true,cancelable:true,clientX:35,clientY:35
     }));
-    const menu=w.document.querySelector("#context");
-    assert.match(menu.textContent,/永久删除选中的 2 项/);
+    assert.equal(w.document.querySelector("#selection-delete").textContent,"永久删除");
     const oldCount=requests.filter(x=>x.action==="permanentDelete").length;
-    [...menu.querySelectorAll("button")].find(x=>x.textContent.includes("永久删除")).click();
+    w.document.querySelector("#selection-delete").click();
     await waitFor(()=>requests.filter(x=>x.action==="permanentDelete").length>oldCount);
     const call=requests.filter(x=>x.action==="permanentDelete").at(-1);
     assert.equal(call.args.paths.length,2);
@@ -399,6 +401,31 @@ async function test(label,fn){
     assert.equal(w.document.querySelector("#multi-select").getAttribute("aria-pressed"),"false");
     assert.match(w.document.querySelector("#multi-count").textContent,/共 0 项/);
   });
+  await test("long press enters selection directly, scroll cancels hold",async()=>{
+    await setPath(0,home);
+    const row=w.document.querySelector('#entries0 .entry[data-path$="/alpha.txt"]');
+    function touch(type,x,y){const e=new w.Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,"touches",{value:type==="touchend"?[]:[{clientX:x,clientY:y}]});row.dispatchEvent(e);}
+    touch("touchstart",30,60);touch("touchmove",30,100);
+    await new Promise(r=>setTimeout(r,530));touch("touchend");
+    assert.ok(w.document.querySelector("#selection-bar").classList.contains("hidden"));
+    touch("touchstart",30,60);await new Promise(r=>setTimeout(r,530));touch("touchend");
+    assert.ok(!w.document.querySelector("#selection-bar").classList.contains("hidden"));
+    assert.equal(w.document.querySelector("#selection-total").textContent,"已选 1 项");
+    assert.ok(w.document.querySelector("#context").classList.contains("hidden"));
+    w.document.querySelector("#selection-cancel").click();
+    assert.ok(w.document.querySelector("#selection-bar").classList.contains("hidden"));
+  });
+  await test("mixed trash and normal selection disables destructive button",async()=>{
+    await new Promise(r=>setTimeout(r,950));
+    await setPath(0,home);await setPath(1,trash);
+    w.document.querySelector("#multi-select").click();
+    assert.ok(w.document.querySelector("#selection-delete").disabled);
+    w.document.querySelector('#entries0 .entry[data-path$="/alpha.txt"]').click();
+    w.document.querySelector('#entries1 .entry[data-path$="/deleted.txt"]').click();
+    assert.ok(w.document.querySelector("#selection-delete").disabled);
+    assert.match(w.document.querySelector("#selection-hint").textContent,/分开选择/);
+    w.document.querySelector("#selection-cancel").click();
+  });
   await test("every required control exists in DOM",async()=>{
     for(const id of ["search","refresh","delete","send-trash","copy","move","new",
         "rename","edit","html-button","terminal-button","extract","zip",
@@ -416,3 +443,4 @@ async function test(label,fn){
  console.log("RESULT | MODE="+mode+"; PASS="+passed+"; FAIL="+failed);
  process.exitCode=failed?1:0;
 })().catch(e=>{console.error("FAIL | QA setup | "+e.stack);process.exitCode=1;dom.window.close();});
+
