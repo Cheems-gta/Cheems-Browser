@@ -1,0 +1,92 @@
+name: Publish CFM PC V1.0 on GitHub Releases
+on:
+  push:
+    branches: [cfm-pc-web-v1.0-release]
+    paths:
+      - ".github/workflows/cfm-pc-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: cheems-file-manager-pc-v1.0.0-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Download previously tested Windows EXE build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh run download 43172433220 --repo "$env:GITHUB_REPOSITORY" --name "CheemsFileManager-PC-V1.0-Full-win-x64" --dir "./release-input"
+          if ($LASTEXITCODE -ne 0) { throw "Unable to download tested CI artifact" }
+          if (!(Test-Path "./release-input/CheemsFileManagerPC.exe")) { throw "Expected compiled EXE missing" }
+
+      - name: Verify tested EXE SHA256 and prepare published downloads
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '8f2bfd21b2de1d8d673b3167773e3ee4b1a29b5b5a804f76022756749a1b126e'
+          $actual = (Get-FileHash "./release-input/CheemsFileManagerPC.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "EXE SHA256 mismatch: $actual" }
+          New-Item -Type Directory -Force "./release" | Out-Null
+          Copy-Item "./release-input/CheemsFileManagerPC.exe" "./release/CheemsFileManagerPC_V1.0_win-x64.exe"
+          Compress-Archive -Path "./release-input/*" -DestinationPath "./release/CheemsFileManager-PC-V1.0-Full-win-x64.zip" -CompressionLevel Optimal
+          if (!(Test-Path "./release/CheemsFileManager-PC-V1.0-Full-win-x64.zip")) { throw "ZIP packaging failed" }
+          "SHA256 ($expected)  CheemsFileManagerPC_V1.0_win-x64.exe" | Set-Content -Encoding utf8 "./release/SHA256SUMS.txt"
+
+      - name: Write version release notes
+        shell: pwsh
+        run: |
+          @'
+          # Cheems File Manager PC V1.0 · Windows 64 位
+
+          **原生 Windows 桌面文件管理器**：.NET 10 WPF + Edge WebView2，Windows 10/11 x64，完全本地使用，无广告。
+
+          ### 保留的原 PC 版功能
+          双栏文件浏览、Windows EXE 与 APK 文件图标、搜索结果定位并短暂绿色高亮、历史路径、左右同步、快捷导航与书签、复制/移动/重命名、新建文件或文件夹、压缩/解压、文本及 HTML 安全预览、Windows CMD、系统打开方式与分享、文件属性、SHA-256 与签名信息。
+
+          ### V1.0 新增的完整多选
+          - 保留原 Android V1.5 操作：左右双栏同时选择、Ctrl+点击、多选模式、全选/取消、右键/长按选中项、底部批量操作栏。
+          - CFM 独立回收站：左右栏批量移入、原路径恢复、回收站内批量永久删除（每次至多 30 项，二次确认）。
+          - 原 Windows 系统回收站仍保留独立入口。
+
+          ### 下载
+          - `CheemsFileManagerPC_V1.0_win-x64.exe`：单文件 Windows 64 位程序，建议普通用户下载。
+          - `CheemsFileManager-PC-V1.0-Full-win-x64.zip`：完整编译输出压缩包。
+          - `SHA256SUMS.txt`：EXE 文件 SHA-256 校验信息。
+
+          ### 测试与说明
+          - GitHub Actions 编译成功；14 项 UI 自动化测试通过，28 项 Windows 文件系统测试通过，未检测到失败。
+          - 部分 Windows 图形界面及不同设备兼容性仍需实机验证。请先用测试文件试用恢复/永久删除功能。
+          - 未使用代码签名证书。Windows 可能显示未知发布者提示；不要关闭安全软件。
+          - 运行需安装 Microsoft Edge WebView2 Runtime。可能预装于 Windows 11，但并不保证每台电脑都有。
+          - CFM 自有回收站与 Windows 系统回收站是两个独立位置，互不混淆。
+
+          源代码位于 `cfm-pc-web-v1.0-release` 分支。
+          对应已通过测试的源代码提交：`4d275373d6eafc5bd03365462eb5823f679124c0`。
+          '@ | Set-Content -Path "./release-notes.md" -Encoding utf8
+
+      - name: Publish versioned GitHub Release and attach EXE + ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "cfm-pc-v1.0.0"
+          gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release already exists, refreshing the assets."
+            gh release upload $tag "./release/CheemsFileManagerPC_V1.0_win-x64.exe" "./release/CheemsFileManager-PC-V1.0-Full-win-x64.zip" "./release/SHA256SUMS.txt" --repo "$env:GITHUB_REPOSITORY" --clobber
+          } else {
+            gh release create $tag "./release/CheemsFileManagerPC_V1.0_win-x64.exe" "./release/CheemsFileManager-PC-V1.0-Full-win-x64.zip" "./release/SHA256SUMS.txt" --repo "$env:GITHUB_REPOSITORY" --target "4d275373d6eafc5bd03365462eb5823f679124c0" --title "Cheems File Manager PC V1.0 · Windows x64" --notes-file "./release-notes.md"
+          }
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
+          gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json name,tagName,url,assets
+          if ($LASTEXITCODE -ne 0) { throw "Unable to verify published GitHub Release" }
