@@ -328,6 +328,39 @@ async function test(label,fn){
     assert.equal(JSON.stringify(got),JSON.stringify(expected));
     await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
   });
+  await test("holding an unselected row never includes the previously checked batch",async()=>{
+    w.document.querySelector("#clear-selection").click();
+    await setPath(0,home);
+    await setPath(1,downloads);
+    const left=w.document.querySelector('#entries0 .entry[data-path$="/alpha.txt"]');
+    const right=w.document.querySelector('#entries1 .entry[data-path$="/sample.zip"]');
+    const unrelated=w.document.querySelector('#entries1 .entry[data-path$="/sample.html"]');
+    left.click();
+    right.click();
+    assert.match(w.document.querySelector("#multi-count").textContent,/共 2 项/);
+    // A long-press on a DIFFERENT, unchecked file must reset the batch.
+    unrelated.dispatchEvent(new w.MouseEvent("contextmenu",{
+      bubbles:true,cancelable:true,clientX:32,clientY:45
+    }));
+    assert.match(w.document.querySelector("#multi-count").textContent,/左 0.*右 1.*共 1/);
+    assert.equal(left.classList.contains("selected"),false);
+    assert.equal(unrelated.classList.contains("selected"),true);
+    assert.ok(!w.document.querySelector("#context").textContent.includes("选中的 2 项"));
+    // Don't actually recycle this fixture; continue testing with clear selection.
+    w.document.querySelector("#clear-selection").click();
+  });
+  await test("file action menu finds the only selected file on the other pane",async()=>{
+    await setPath(0,home);
+    await setPath(1,downloads);
+    w.document.querySelector("#clear-selection").click();
+    w.document.querySelector('#entries0 .entry[data-path$="/alpha.txt"]').click();
+    // Switch active pane without selecting anything on that side.
+    w.document.querySelector("#entries1 .entry:not([data-path])").click();
+    w.document.querySelector("#mobile-file-actions").click();
+    assert.ok(w.document.querySelector("#context").textContent.includes("移入回收站"));
+    assert.match(w.document.querySelector("#multi-count").textContent,/共 1 项/);
+    w.document.querySelector("#clear-selection").click();
+  });
   await test("trash multi-select permanent delete sends exactly the checked entries",async()=>{
     w.document.querySelector("#clear-selection").click();
     await setPath(0,trash);
