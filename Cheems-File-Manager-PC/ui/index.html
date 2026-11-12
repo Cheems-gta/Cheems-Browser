@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="brand"><span class="brand-mark"><img src="icon.webp" alt="CFM 图标"></span><span class="brand-text">Cheems File Manager <small>PC · V0.7</small></span></div>
+      <div class="brand"><span class="brand-mark"><img src="icon.webp" alt="CFM 图标"></span><span class="brand-text">Cheems File Manager <small>PC · V1.0</small></span></div>
       <div class="header-right"><span id="busy" class="busy hidden">正在处理…</span><span class="offline">● 本地离线</span></div>
     </header>
 
@@ -37,8 +37,17 @@
       <button id="move" title="移动到另一栏">⇄ 移动</button>
       <button id="new" title="在当前栏创建文件夹">＋ 文件夹</button>
       <button id="rename" title="重命名（F2）">✎ 重命名</button>
-      <button id="send-trash" class="danger" title="将选中的文件移入 Windows 回收站（Delete）">♲ 移入回收站</button>
-      <button id="delete" title="打开 Windows 回收站窗口（无需选择文件）">▣ 打开回收站</button>
+      <button id="multi-select" title="开启多选，左右两栏都可选择" aria-pressed="false">☐ 多选</button>
+      <button id="select-all" title="全选当前栏可见文件，最多合计 200 项">☑ 当前栏全选</button>
+      <button id="clear-selection" title="取消左右两栏选中项">✕ 取消选择</button>
+      <span id="multi-count" class="cfm-selection-info">已选 左 0 · 右 0 · 共 0 项</span>
+      <button id="send-trash" class="danger" title="将左右两栏选中项目移入 CFM 本地回收站">♲ 移入回收站</button>
+      <button id="delete" title="在 CFM 中打开可恢复回收站">▣ CFM 回收站</button>
+      <button id="restore-trash" title="恢复 CFM 回收站里的选中项目">⟲ 恢复</button>
+      <button id="permanent-trash" class="danger hidden" title="永久删除 CFM 回收站里的项目，无法恢复">🗑 永久删除</button>
+      <button id="windows-trash" title="打开 Windows 系统回收站">▣ Windows 回收站</button>
+      <button id="windows-recycle" title="选中项移入 Windows 系统回收站">♻ 系统回收</button>
+      <button id="mobile-file-actions" title="对选中的文件显示操作菜单">⋮ 文件操作</button>
       <button id="share" title="通过系统支持的应用分享所选文件">↗ 分享</button>
       <span class="divider"></span>
       <button id="edit" title="打开文本/HTML 源码编辑">〈/〉 编辑</button>
@@ -71,9 +80,14 @@
         <div class="pane-foot" id="foot1"></div>
       </section>
     </main>
+    <section id="selection-bar" class="selection-bar hidden" aria-label="已选文件操作">
+      <div class="selection-summary"><div><strong id="selection-total" aria-live="polite">已选 0 项</strong><small id="selection-detail"></small></div><button id="selection-all">全选左栏</button><button id="selection-cancel">取消</button></div>
+      <p id="selection-hint">点选文件，再点下方按钮</p>
+      <div class="selection-actions"><button id="selection-delete" class="primary" disabled>移入回收站</button><button id="selection-restore" class="hidden">恢复</button><button id="selection-more">更多</button></div>
+    </section>
     <footer class="status">
       <span id="status-text">准备就绪</span>
-      <span>双击进入 · 右键菜单 · Alt+←/→ 历史 · Ctrl+F 搜索 · Delete 入回收站</span>
+      <span>双栏多选 · Ctrl+点击 · 右键菜单 · Alt+←/→ 历史 · Delete 入 CFM 回收站</span>
     </footer>
   </div>
 
