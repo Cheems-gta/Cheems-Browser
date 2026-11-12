@@ -1,7 +1,7 @@
-name: CFM Android V1.3 - Data & Open Fix + QA APK
+name: CFM Android V1.4 - Multi-select + QA APK
 on:
   push:
-    branches: [cfm-pc-android-preview-v1.1]
+    branches: [cfm-pc-android-preview-v1.4]
     paths:
       - "Cheems-File-Manager-Android/**"
       - "CFM-QA/**"
@@ -59,7 +59,7 @@ jobs:
       - name: Upload verified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CheemsFM-Android-V1.3-DataOpenFix-APK
+          name: CheemsFM-Android-V1.4-MultiSelect-APK
           path: Cheems-File-Manager-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
