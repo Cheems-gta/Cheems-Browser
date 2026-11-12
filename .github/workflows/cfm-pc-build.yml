@@ -60,5 +60,5 @@ jobs:
           Copy-Item ./cfm-pc-output/CheemsFileManagerPC.exe ./repair-release/CheemsFileManagerPC_V1.0.1_win-x64.exe
           Compress-Archive -Path ./cfm-pc-output/* -DestinationPath ./repair-release/CheemsFileManager-PC-V1.0.1-win-x64.zip
           Get-ChildItem ./repair-release -File | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name } | Set-Content ./repair-release/SHA256SUMS.txt
-          gh release create cfm-pc-v1.0.1-preview ./repair-release/* --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --prerelease --title "Cheems File Manager PC V1.0.1 · 修复预览版" --notes-file ./CFM-QA/RELEASE-1.0.1.md
+          gh release create cfm-pc-v1.0.1-rc1 ./repair-release/* --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --prerelease --title "Cheems File Manager PC V1.0.1 · 修复预览版" --notes-file ./CFM-QA/RELEASE-1.0.1.md
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
