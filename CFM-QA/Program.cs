@@ -160,7 +160,7 @@ static class Program
                 return Raises("rename",new {path=Path.Combine(left,"Folder"),name="notes (2).txt"});
             });
             Check("MOVE does not copy folders into themselves",()=>
-                Raises("copy",new {paths=new[]{left},target=Path.Combine(left,"Folder")}));
+                Api("copy",new {paths=new[]{left},target=Path.Combine(left,"Folder")}).GetProperty("failed").GetArrayLength()==1);
             Check("NO recycle without selected paths",()=>
                 Raises("recycle",new {paths=Array.Empty<string>()}));
 
@@ -192,6 +192,60 @@ static class Program
                 return !File.Exists(stored)&&!File.Exists(original);
             });
 
+            Check("BATCH reports missing item and continues",()=>{
+                string a=Path.Combine(left,"batch.txt"); File.WriteAllText(a,"batch");
+                var r=Api("copy",new{paths=new[]{Path.Combine(left,"missing.txt"),a},target=right});
+                return r.GetProperty("failed").GetArrayLength()==1 && r.GetProperty("count").GetInt32()==1
+                    && File.ReadAllText(Path.Combine(right,"batch.txt"))=="batch";
+            });
+            Check("SKIP preserves both files",()=>{
+                string a=Path.Combine(left,"batch.txt"),b=Path.Combine(right,"batch.txt");
+                File.WriteAllText(b,"old");
+                var r=Api("move",new{paths=new[]{a},target=right,conflict="skip"});
+                return r.GetProperty("skipped").GetArrayLength()==1 && File.Exists(a) && File.ReadAllText(b)=="old";
+            });
+            Check("OVERWRITE publishes complete replacement",()=>{
+                string a=Path.Combine(left,"batch.txt"),b=Path.Combine(right,"batch.txt");
+                var r=Api("copy",new{paths=new[]{a},target=right,conflict="overwrite"});
+                return r.GetProperty("count").GetInt32()==1 && File.ReadAllText(b)=="batch" && File.Exists(a);
+            });
+            Check("OVERWRITE folder replaces whole item",()=>{
+                string a=Path.Combine(left,"replace-dir"),b=Path.Combine(right,"replace-dir");
+                Directory.CreateDirectory(a); Directory.CreateDirectory(b);
+                File.WriteAllText(Path.Combine(a,"new.txt"),"new"); File.WriteAllText(Path.Combine(b,"old.txt"),"old");
+                var r=Api("copy",new{paths=new[]{a},target=right,conflict="overwrite"});
+                return r.GetProperty("count").GetInt32()==1 && File.Exists(Path.Combine(b,"new.txt")) && !File.Exists(Path.Combine(b,"old.txt"));
+            });
+            Check("Parent and child selection rejected before mutation",()=>
+                Raises("move",new{paths=new[]{left,Path.Combine(left,"batch.txt")},target=right}) && Directory.Exists(left));
+            Check("Atomic save leaves one backup and no staging file",()=>{
+                string p=Path.Combine(left,"atomic.txt"); File.WriteAllText(p,"first");
+                Api("save",new{path=p,text="second",bom=false}); Api("save",new{path=p,text="third",bom=false});
+                return File.ReadAllText(p)=="third" && File.ReadAllText(p+".cfm.bak")=="second"
+                    && Directory.GetFiles(left,"*.cfm-save-*").Length==0;
+            });
+            string? otherRoot=DriveInfo.GetDrives().Where(d=>d.IsReady && d.DriveType==DriveType.Fixed)
+                .Select(d=>d.RootDirectory.FullName).FirstOrDefault(r=>!string.Equals(r,Path.GetPathRoot(temp),StringComparison.OrdinalIgnoreCase));
+            if(otherRoot!=null)
+            {
+                Check("REAL cross-volume move, recycle and restore folder",()=>{
+                    string testRoot=Path.Combine(otherRoot,"CFMQA-"+Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(testRoot);
+                    try {
+                        string a=Path.Combine(left,"cross-dir"); Directory.CreateDirectory(a);
+                        File.WriteAllText(Path.Combine(a,"payload.txt"),"cross-volume");
+                        var r=Api("move",new{paths=new[]{a},target=testRoot});
+                        string moved=Path.Combine(testRoot,"cross-dir");
+                        if(r.GetProperty("count").GetInt32()!=1 || Directory.Exists(a))return false;
+                        Api("recycle",new{paths=new[]{moved}});
+                        string stored=Directory.GetDirectories(CfmTrash.DirectoryPath).Single(p=>p.EndsWith("-cross-dir"));
+                        Api("restore",new{paths=new[]{stored}});
+                        return File.ReadAllText(Path.Combine(moved,"payload.txt"))=="cross-volume";
+                    } finally { Directory.Delete(testRoot,true); }
+                });
+            }
+            else { skipped++; Console.WriteLine("SKIP | cross-volume: second volume unavailable"); }
+
             // These require interactive shell sessions / real hardware and are
             // explicitly not faked as passing automated tests.
             foreach(string skip in new[]{
@@ -213,3 +267,4 @@ static class Program
         return fail==0?0:1;
     }
 }
+

@@ -71,24 +71,9 @@ public static class CfmTrash
     }
     private static void MoveSafely(string src, string dst, bool folder)
     {
-        NoLinks(src);
-        bool sameDrive=string.Equals(Path.GetPathRoot(src),Path.GetPathRoot(dst),
-            StringComparison.OrdinalIgnoreCase);
-        if(sameDrive) {
-            if(folder) Directory.Move(src,dst); else File.Move(src,dst);
-            return;
-        }
-        // Cross-volume: retain the source until the destination copy succeeds.
-        try { if(folder)CopyFolder(src,dst); else File.Copy(src,dst); }
-        catch {
-            try {
-                if(Directory.Exists(dst)) Directory.Delete(dst,true);
-                else if(File.Exists(dst)) File.Delete(dst);
-            } catch { /* Preserve the original exception. */ }
-            throw;
-        }
-        if(folder) Directory.Delete(src,true); else File.Delete(src);
+        SafeTransfer.Run(src, dst, true, false);
     }
+
     public static object Open()
     {
         Directory.CreateDirectory(DirectoryPath);
@@ -123,9 +108,13 @@ public static class CfmTrash
                     Guid.NewGuid().ToString("N")[..8]+"-"+name;
                 if(stored.Length>190) stored=stored[..190];
                 string dst=Path.Combine(DirectoryPath,stored);
-                MoveSafely(source,dst,folder);
+                // Persist recovery information before moving any bytes. If a
+                // move fails after publishing its copy, both copies remain recoverable.
                 index[stored]=new Record(source,folder);
-                Save(index);done++;
+                Save(index);
+                try { MoveSafely(source,dst,folder); }
+                catch { if (!Exists(dst)) { index.Remove(stored); Save(index); } throw; }
+                done++;
             }
             return new {count=done,message="已移入 CFM 本地回收站"};
         }
@@ -168,3 +157,4 @@ public static class CfmTrash
         }
     }
 }
+

@@ -626,7 +626,11 @@ async function mutate(action,args,successText) {
       await Promise.all(state.panes.map((pane,index)=>
         pane.path?navigate(index,pane.path).catch(()=>{}):Promise.resolve()));
     }
-    toast(successText || "操作已完成");
+    if (out && Array.isArray(out.failed)) {
+      const summary=`成功 ${out.count} 项 · 跳过 ${out.skipped?.length || 0} 项 · 失败 ${out.failed.length} 项`;
+      toast(summary, out.failed.length > 0);
+      if (out.failed.length) alert(summary + "\n\n" + out.failed.map(item=>item.path+"\n"+item.error).join("\n\n"));
+    } else toast(successText || "操作已完成");
     return out;
   });
 }
@@ -634,8 +638,9 @@ async function transfer(move) {
   try {
     const paths=selectedPaths(), target=state.panes[1-state.active].path;
     if(!target) throw new Error("另一栏尚未打开目标文件夹");
-    if(!confirm((move?"移动":"复制")+" "+paths.length+" 项到：\n"+target+"\n\n如有重名，复制/移动会自动生成新文件名。")) return;
-    await mutate(move?"move":"copy",{paths,target},(move?"移动":"复制")+"完成");
+    const conflict=$("#transfer-conflict").value;
+    if(!confirm((move?"移动":"复制")+" "+paths.length+" 项到：\n"+target+"\n\n同名处理：" + $("#transfer-conflict").selectedOptions[0].textContent)) return;
+    await mutate(move?"move":"copy",{paths,target,conflict},(move?"移动":"复制")+"完成");
   } catch(e){toast(e.message,true)}
 }
 async function makeFolder() {
@@ -1317,4 +1322,5 @@ async function start() {
   }
 }
 window.addEventListener("DOMContentLoaded",start);
+
 

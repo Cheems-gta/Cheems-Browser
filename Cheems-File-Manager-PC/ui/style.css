@@ -156,3 +156,12 @@ button:disabled{opacity:.45;cursor:default}
 .selection-bar p{margin:3px 0 4px}
 .selection-actions #selection-delete{flex:0 1 240px}
 .actions #multi-count{align-self:center}
+
+
+/* Wrap actions so destructive and navigation buttons remain reachable. */
+.actions,.quickbar{flex-wrap:wrap;white-space:normal;overflow:visible}
+.actions button,.quickbar button{flex-shrink:0}
+.pane-title span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.address-line button{flex-shrink:0}
+.selection-actions{flex-wrap:wrap}
+@media(max-width:850px){.split{flex-direction:column}.split-divider{height:8px;width:auto}.pane{min-height:0}.header-right{display:none}}

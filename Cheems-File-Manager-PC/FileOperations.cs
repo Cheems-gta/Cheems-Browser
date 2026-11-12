@@ -38,8 +38,8 @@ public static class FileOperations
         "search" => Search(S(args, "path"), S(args, "query")),
         "read" => ReadText(S(args, "path")),
         "save" => SaveText(S(args, "path"), S(args, "text"), B(args, "bom")),
-        "copy" => Transfer(Paths(args), S(args, "target"), false),
-        "move" => Transfer(Paths(args), S(args, "target"), true),
+        "copy" => Transfer(Paths(args), S(args, "target"), false, Conflict(args)),
+        "move" => Transfer(Paths(args), S(args, "target"), true, Conflict(args)),
         "rename" => Rename(S(args, "path"), S(args, "name")),
         "mkdir" => NewFolder(S(args, "path"), S(args, "name")),
         "newFile" => NewFile(S(args, "path"), S(args, "name")),
@@ -312,7 +312,17 @@ public static class FileOperations
             .Concat(StrictUtf8.GetBytes(text)).ToArray();
         // Keep a single neighboring backup before replacing an existing file.
         File.Copy(path, path + ".cfm.bak", true);
-        File.WriteAllBytes(path, content);
+        string temporary = path + ".cfm-save-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(content);
+                stream.Flush(true);
+            }
+            File.Replace(temporary, path, null);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
         return new { path, backup = path + ".cfm.bak" };
     }
 
@@ -405,34 +415,49 @@ public static class FileOperations
         return c.StartsWith(p, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static object Transfer(string[] sources, string targetInput, bool move)
+    private static string Conflict(JsonElement args) =>
+        args.TryGetProperty("conflict", out var value) ? value.GetString() ?? "rename" : "rename";
+
+    private static object Transfer(string[] sources, string targetInput, bool move, string conflict)
     {
+        if (conflict is not ("rename" or "skip" or "overwrite"))
+            throw new ArgumentException("未知同名处理方式");
         string targetDir = Path.GetFullPath(targetInput);
         if (!Directory.Exists(targetDir)) throw new DirectoryNotFoundException(targetDir);
-        int finished = 0;
+        // Validate overlapping selections before changing any file.
+        if (sources.Any(p => sources.Any(q => !string.Equals(p,q,StringComparison.OrdinalIgnoreCase) && ChildOf(p,q))))
+            throw new IOException("不能同时选中父文件夹及其内部文件");
+        var done = new List<object>();
+        var skipped = new List<string>();
+        var failed = new List<object>();
         foreach (string source in sources)
         {
-            bool isDir = Directory.Exists(source);
-            if (!isDir && !File.Exists(source)) throw new FileNotFoundException(source);
-            string root = Path.GetPathRoot(source) ?? source;
-            if (source.TrimEnd('\\') == root.TrimEnd('\\'))
-                throw new IOException("不允许复制或移动磁盘根目录");
-            if (isDir && ChildOf(targetDir, source))
-                throw new IOException("不能将文件夹放进自身或子目录：" + source);
-            if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("暂不支持复制符号链接、目录联接：" + source);
-
-            string dest = Unique(targetDir, Path.GetFileName(source), isDir);
-            if (move)
+            try
             {
-                if (isDir) Directory.Move(source, dest);
-                else File.Move(source, dest);
+                bool isDir = Directory.Exists(source);
+                if (!isDir && !File.Exists(source)) throw new FileNotFoundException(source);
+                string root = Path.GetPathRoot(source) ?? source;
+                if (source.TrimEnd('\\','/') == root.TrimEnd('\\','/'))
+                    throw new IOException("不允许复制或移动磁盘根目录");
+                if (isDir && ChildOf(targetDir, source))
+                    throw new IOException("不能将文件夹放进自身或子目录：" + source);
+                string dest = Path.Combine(targetDir, Path.GetFileName(source));
+                if (string.Equals(source,dest,StringComparison.OrdinalIgnoreCase) && move)
+                    throw new IOException("源位置与目标位置相同");
+                if (PathExists(dest))
+                {
+                    if (conflict == "skip") { skipped.Add(source); continue; }
+                    if (conflict == "rename") dest = Unique(targetDir, Path.GetFileName(source), isDir);
+                    else if (string.Equals(source,dest,StringComparison.OrdinalIgnoreCase))
+                        throw new IOException("不能用文件覆盖自身");
+                }
+                SafeTransfer.Run(source, dest, move, conflict == "overwrite");
+                done.Add(new { path = source, target = dest });
             }
-            else if (isDir) CopyDirectory(source, dest, 0);
-            else File.Copy(source, dest);
-            finished++;
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { failed.Add(new { path = source, error = ex.Message }); }
         }
-        return new { count = finished, operation = move ? "移动" : "复制" };
+        return new { count = done.Count, done, skipped, failed, operation = move ? "移动" : "复制" };
     }
 
     private static void CopyDirectory(string from, string to, int depth)
@@ -571,3 +596,4 @@ public static class FileOperations
         }
     }
 }
+

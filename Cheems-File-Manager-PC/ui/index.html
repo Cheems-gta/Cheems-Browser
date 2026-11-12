@@ -35,6 +35,11 @@
       <button id="up" title="上一级（Backspace）">↑ 上一级</button>
       <button id="copy" title="复制到另一栏">⧉ 复制</button>
       <button id="move" title="移动到另一栏">⇄ 移动</button>
+      <select id="transfer-conflict" aria-label="复制移动同名处理" title="适用于整批操作；下次操作沿用本次选择。覆盖文件夹会替换整个文件夹。">
+        <option value="rename">同名：保留两份</option>
+        <option value="skip">同名：跳过</option>
+        <option value="overwrite">同名：覆盖整个项目</option>
+      </select>
       <button id="new" title="在当前栏创建文件夹">＋ 文件夹</button>
       <button id="rename" title="重命名（F2）">✎ 重命名</button>
       <button id="multi-select" title="开启多选，左右两栏都可选择" aria-pressed="false">☐ 多选</button>
@@ -150,3 +155,4 @@
   <script src="app.js" defer></script>
 </body>
 </html>
+
