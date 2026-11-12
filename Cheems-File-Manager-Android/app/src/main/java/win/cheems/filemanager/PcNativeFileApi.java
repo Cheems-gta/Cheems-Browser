@@ -671,23 +671,39 @@ final class PcNativeFileApi {
     private static JSONObject recycle(JSONArray paths)throws Exception {
         File trash=trashDir();
         JSONObject meta=readTrashIndex(trash);
-        int count=0;
+        // Validate the ENTIRE batch before moving anything.
+        java.util.ArrayList<File> sources=new java.util.ArrayList<>();
+        java.util.HashSet<String> seen=new java.util.HashSet<>();
         for(int i=0;i<paths.length();i++){
             File source=safeFile(paths.getString(i));
-            if(!source.exists())throw new IOException("要回收的文件不存在");
+            if(!source.exists())throw new IOException("要回收的文件不存在："+source.getName());
+            if(isProtectedPath(source.getPath()))
+                throw new IOException("Android/data 和 obb 当前为只读，不能移入回收站");
             if(isChild(trash,source))
                 throw new IOException("不能回收包含回收站的父文件夹");
             if(source.getParentFile().equals(trash))
                 throw new IOException("文件已经在 CFM 回收站中");
+            if(!seen.add(source.getCanonicalPath()))
+                throw new IOException("批量操作中包含重复文件："+source.getName());
+            sources.add(source);
+        }
+        for(int i=0;i<sources.size();i++)for(int j=i+1;j<sources.size();j++){
+            if(isChild(sources.get(i),sources.get(j))||
+                isChild(sources.get(j),sources.get(i)))
+                throw new IOException("不能同时回收父文件夹和内部文件");
+        }
+        int count=0;
+        for(File source:sources) {
             File moved=unique(trash,source.getName(),source.isDirectory());
-            if(!source.renameTo(moved))throw new IOException("移入 CFM 回收站失败");
+            if(!source.renameTo(moved))throw new IOException(
+                "已回收 "+count+" 项；文件 "+source.getName()+" 移入失败，请刷新检查");
             meta.put(moved.getName(),source.getAbsolutePath());
             writeTrashIndex(trash,meta);
             count++;
         }
-        return new JSONObject().put("count",count).put("message","已移入 CFM 本地回收站");
+        return new JSONObject().put("count",count)
+            .put("message","已将 "+count+" 项移入 CFM 本地回收站");
     }
-
 
     /**
      * Permanent deletion is restricted to direct children of CFM's own trash.
@@ -699,20 +715,27 @@ final class PcNativeFileApi {
         JSONObject meta=readTrashIndex(trash);
         if (paths.length()>30)
             throw new IOException("一次最多永久删除 30 项");
-        int removed=0;
-        for (int i=0;i<paths.length();i++) {
+        // Validate all entries first so an invalid final item cannot cause
+        // earlier files to disappear before we report the error.
+        java.util.ArrayList<File> checked=new java.util.ArrayList<>();
+        java.util.HashSet<String> seen=new java.util.HashSet<>();
+        for(int i=0;i<paths.length();i++){
             File requested=new File(paths.getString(i)).getAbsoluteFile();
             File folder=requested.getParentFile();
-            if (folder==null || !folder.getCanonicalFile().equals(trash))
+            if(folder==null||!folder.getCanonicalFile().equals(trash))
                 throw new IOException("安全限制：永久删除仅允许 CFM 回收站顶层项目");
             String name=requested.getName();
-            if(name.equals(".") || name.equals("..") ||
-               name.startsWith(".cfm_index.json") ||
-               name.equals(".CFM_RecycleBin"))
+            if(name.equals(".")||name.equals("..")||
+               name.startsWith(".cfm_index.json")||name.equals(".CFM_RecycleBin"))
                 throw new IOException("拒绝删除回收站管理文件");
             File item=safeFile(requested.getPath());
-            if(!item.exists())
-                throw new IOException("回收站项目不存在："+name);
+            if(!item.exists())throw new IOException("回收站项目不存在："+name);
+            if(!seen.add(item.getCanonicalPath()))throw new IOException("请取消重复选择："+name);
+            checked.add(item);
+        }
+        int removed=0;
+        for(File item:checked) {
+            String name=item.getName();
             // java.nio.file.walkFileTree does NOT follow symbolic links
             // unless FOLLOW_LINKS is explicitly enabled.
             final int[] deletedItems={0};
