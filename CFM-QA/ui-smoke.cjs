@@ -28,7 +28,10 @@ const fixture={
     {name:"legacy.txt",isDir:false,path:downloads+"/legacy.txt",size:77},
     {name:"sample.apk",isDir:false,path:downloads+"/sample.apk",size:30000}
   ],
-  [trash]:[{name:"deleted.txt",isDir:false,path:trash+"/deleted.txt",size:7}]
+  [trash]:[
+    {name:"deleted.txt",isDir:false,path:trash+"/deleted.txt",size:7},
+    {name:"another.txt",isDir:false,path:trash+"/another.txt",size:8}
+  ]
 };
 let passed=0,failed=0;
 const requests=[],listeners=[];
@@ -284,9 +287,80 @@ async function test(label,fn){
     assert.ok(w.document.querySelector("#extract"));
     assert.ok(w.document.querySelector("#zip"));
   });
+
+  await test("multi-select keeps choices across both panes",async()=>{
+    w.document.querySelector("#clear-selection").click();
+    await setPath(0,home);
+    await setPath(1,downloads);
+    w.document.querySelector("#multi-select").click();
+    assert.equal(w.document.querySelector("#multi-select").getAttribute("aria-pressed"),"true");
+    const left=w.document.querySelector('#entries0 .entry[data-path$="/alpha.txt"]');
+    assert.ok(left);
+    left.click();
+    w.document.querySelector('#entries1 .entry[data-path$="/sample.zip"]').click();
+    w.document.querySelector('#entries1 .entry[data-path$="/sample.html"]').click();
+    assert.match(w.document.querySelector("#multi-count").textContent,/左 1.*右 2.*共 3/);
+    assert.ok(left.classList.contains("selected"));
+    assert.ok(w.document.querySelector('#entries1 .entry[data-path$="/sample.zip"]').classList.contains("selected"));
+  });
+  await test("long-press selected file retains both panes and recycles all",async()=>{
+    const oldCount=requests.filter(x=>x.action==="recycle").length;
+    const right=w.document.querySelector('#entries1 .entry[data-path$="/sample.zip"]');
+    right.dispatchEvent(new w.MouseEvent("contextmenu",{
+      bubbles:true,cancelable:true,clientX:62,clientY:51
+    }));
+    assert.match(w.document.querySelector("#context").textContent,/选中的 3 项移入回收站/);
+    assert.match(w.document.querySelector("#multi-count").textContent,/左 1.*右 2.*共 3/);
+    const button=[...w.document.querySelectorAll("#context button")].find(b=>b.textContent.includes("移入回收站"));
+    assert.ok(button);
+    button.click();
+    await waitFor(()=>requests.filter(x=>x.action==="recycle").length>oldCount);
+    const call=requests.filter(x=>x.action==="recycle").at(-1);
+    assert.equal(call.args.paths.length,3);
+    const got=[...call.args.paths].sort();
+    const expected=[home+"/alpha.txt",downloads+"/sample.zip",downloads+"/sample.html"].sort();
+    assert.equal(JSON.stringify(got),JSON.stringify(expected));
+    await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
+  });
+  await test("trash multi-select permanent delete sends exactly the checked entries",async()=>{
+    w.document.querySelector("#clear-selection").click();
+    await setPath(0,trash);
+    w.document.querySelector('#entries0 .entry[data-path$="/deleted.txt"]').click();
+    w.document.querySelector('#entries0 .entry[data-path$="/another.txt"]').click();
+    const selected=w.document.querySelector('#entries0 .entry[data-path$="/deleted.txt"]');
+    selected.dispatchEvent(new w.MouseEvent("contextmenu",{
+      bubbles:true,cancelable:true,clientX:35,clientY:35
+    }));
+    const menu=w.document.querySelector("#context");
+    assert.match(menu.textContent,/永久删除选中的 2 项/);
+    const oldCount=requests.filter(x=>x.action==="permanentDelete").length;
+    [...menu.querySelectorAll("button")].find(x=>x.textContent.includes("永久删除")).click();
+    await waitFor(()=>requests.filter(x=>x.action==="permanentDelete").length>oldCount);
+    const call=requests.filter(x=>x.action==="permanentDelete").at(-1);
+    assert.equal(call.args.paths.length,2);
+    assert.equal(JSON.stringify([...call.args.paths].sort()),
+      JSON.stringify([trash+"/deleted.txt",trash+"/another.txt"].sort()));
+    await waitFor(()=>w.document.querySelector("#busy").classList.contains("hidden"));
+  });
+  await test("cancelled permanent deletion never invokes native API",async()=>{
+    w.document.querySelector('#entries0 .entry[data-path$="/deleted.txt"]').click();
+    const old=w.confirm;
+    w.confirm=()=>false;
+    const before=requests.filter(x=>x.action==="permanentDelete").length;
+    w.document.querySelector("#permanent-trash").click();
+    await new Promise(r=>setTimeout(r,90));
+    assert.equal(requests.filter(x=>x.action==="permanentDelete").length,before);
+    w.confirm=old;
+  });
+  await test("turning off multi-select clears both panes",async()=>{
+    w.document.querySelector("#multi-select").click();
+    assert.equal(w.document.querySelector("#multi-select").getAttribute("aria-pressed"),"false");
+    assert.match(w.document.querySelector("#multi-count").textContent,/共 0 项/);
+  });
   await test("every required control exists in DOM",async()=>{
     for(const id of ["search","refresh","delete","send-trash","copy","move","new",
         "rename","edit","html-button","terminal-button","extract","zip",
+        "multi-select","select-all","clear-selection","multi-count",
         "search-overlay","search-query","search-submit","close-search"]) {
       assert.ok(w.document.getElementById(id),"Missing #"+id);
     }
